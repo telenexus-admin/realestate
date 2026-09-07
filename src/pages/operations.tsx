@@ -9,7 +9,7 @@ export function MaintenancePage({onAdd}:{onAdd:()=>void}){
 }
 
 export function InspectionsPage({onAdd}:{onAdd:()=>void}){
-  return <><ModuleHeader page="Inspections" onAdd={onAdd}/><div className="inspection-overview"><div className="inspection-score"><span>PROPERTY CONDITION SCORE</span><strong>88</strong><small>Across 12 active properties</small></div><div className="inspection-breakdown"><div><span>Scheduled</span><strong>18</strong></div><div><span>Completed</span><strong>11</strong></div><div><span>Flagged defects</span><strong>7</strong></div><div><span>Awaiting review</span><strong>4</strong></div></div></div><Panel title="Inspection schedule" kicker="Condition & compliance"><DataTable headers={['Inspection','Type','Property / unit','Schedule','Inspector','Status']} rows={inspections.map(i=>[...i.slice(0,5),<Status value={i[5]}/>])}/></>;
+  return <><ModuleHeader page="Inspections" onAdd={onAdd}/><div className="inspection-overview"><div className="inspection-score"><span>PROPERTY CONDITION SCORE</span><strong>88</strong><small>Across 12 active properties</small></div><div className="inspection-breakdown"><div><span>Scheduled</span><strong>18</strong></div><div><span>Completed</span><strong>11</strong></div><div><span>Flagged defects</span><strong>7</strong></div><div><span>Awaiting review</span><strong>4</strong></div></div></div><Panel title="Inspection schedule" kicker="Condition & compliance"><DataTable headers={['Inspection','Type','Property / unit','Schedule','Inspector','Status']} rows={inspections.map(i=>[...i.slice(0,5),<Status value={i[5]}/>])}/></Panel></>;
 }
 
 export function InboxPage({onAdd}:{onAdd:()=>void}){
@@ -32,7 +32,7 @@ export function AIAssistantPage(){
 
 export function TeamPage(){
   const team=[['Alex N.','Company Admin','All properties','Active'],['Sarah Njeri','Property Manager','Greenview + 3','Active'],['Peter Mwangi','Caretaker','Greenview','Active'],['Grace Muthoni','Accountant','All properties','Active'],['Miriam Wambui','Property Manager','Parkline + 2','Active']];
-  return <><div className="module-header"><div><div className="eyebrow">Administration</div><h1>Team & roles</h1><p>Granular people, access and property-level permissions.</p></div><button className="primary-button">+ Invite member</button></div><div className="access-hero"><div><span>ACCESS POSTURE</span><strong>14 workspace members</strong><p>12 active, 2 invited. MFA enabled for all privileged roles.</p></div><div><span>Security score</span><strong>96</strong><small>Strong</small></div></div><Panel title="Workspace team" kicker="Access control"><DataTable headers={['Member','Role','Scope','Status']} rows={team.map(t=>[...t.slice(0,3),<Status value={t[3]}/>])}/></>;
+  return <><div className="module-header"><div><div className="eyebrow">Administration</div><h1>Team & roles</h1><p>Granular people, access and property-level permissions.</p></div><button className="primary-button">+ Invite member</button></div><div className="access-hero"><div><span>ACCESS POSTURE</span><strong>14 workspace members</strong><p>12 active, 2 invited. MFA enabled for all privileged roles.</p></div><div><span>Security score</span><strong>96</strong><small>Strong</small></div></div><Panel title="Workspace team" kicker="Access control"><DataTable headers={['Member','Role','Scope','Status']} rows={team.map(t=>[...t.slice(0,3),<Status value={t[3]}/>])}/></Panel></>;
 }
 
 export function SettingsPage(){
