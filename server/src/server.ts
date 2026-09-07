@@ -5,6 +5,7 @@ import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import 'dotenv/config';
 import { query, withTransaction } from './db.js';
+import workflowRouter from './workflow-routes.js';
 
 type AuthUser = { userId: string; organizationId: string; role: string };
 type AuthedRequest = Request & { auth?: AuthUser };
@@ -52,6 +53,7 @@ app.post('/api/auth/dev-login', async (req, res) => {
 });
 
 app.use('/api', auth);
+app.use('/api', workflowRouter);
 
 app.get('/api/dashboard', async (req: AuthedRequest, res) => {
   const org = tenantId(req);
@@ -175,7 +177,8 @@ app.get('/api/reports/rent-roll', async (req: AuthedRequest, res) => {
 
 app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
   console.error(error);
-  res.status(500).json({ error: error instanceof Error ? error.message : 'Internal server error' });
+  const status = typeof error === 'object' && error && 'status' in error && typeof (error as {status?:unknown}).status === 'number' ? (error as {status:number}).status : 500;
+  res.status(status).json({ error: error instanceof Error ? error.message : 'Internal server error' });
 });
 
 app.listen(PORT, () => console.log(`Polyizon PropOS API listening on :${PORT}`));
