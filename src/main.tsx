@@ -8,6 +8,7 @@ import './command.css';
 import './premium.css';
 import './screen-premium.css';
 import './details.css';
+import './deep-details.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
