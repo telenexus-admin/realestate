@@ -6,6 +6,7 @@ import './modules.css';
 import './extras.css';
 import './command.css';
 import './premium.css';
+import './screen-premium.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
