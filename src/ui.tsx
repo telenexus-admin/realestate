@@ -10,8 +10,8 @@ export function MetricCard({label,value,note,icon:Icon,tone='primary'}:{label:st
   return <article className="metric-card"><div className={`metric-icon ${tone}`}><Icon size={18}/></div><div className="metric-copy"><span>{label}</span><strong>{value}</strong><small>{note}</small></div></article>
 }
 
-export function DataTable({headers,rows}:{headers:string[];rows:ReactNode[][]}){
-  return <div className="table-scroll"><table><thead><tr>{headers.map(h=><th key={h}>{h}</th>)}<th></th></tr></thead><tbody>{rows.map((r,i)=><tr key={i}>{r.map((c,j)=><td key={j}>{c}</td>)}<td><button className="more-btn"><MoreHorizontal size={17}/></button></td></tr>)}</tbody></table></div>
+export function DataTable({headers,rows,onRowClick,compact=false}:{headers:string[];rows:ReactNode[][];onRowClick?:(rowIndex:number)=>void;compact?:boolean}){
+  return <div className={`table-scroll ${compact?'compact':''}`}><table><thead><tr>{headers.map(h=><th key={h}>{h}</th>)}<th></th></tr></thead><tbody>{rows.map((r,i)=><tr key={i} className={onRowClick?'clickable-row':''} tabIndex={onRowClick?0:undefined} onClick={()=>onRowClick?.(i)} onKeyDown={e=>{if(onRowClick&&(e.key==='Enter'||e.key===' ')){e.preventDefault();onRowClick(i)}}}>{r.map((c,j)=><td key={j}>{c}</td>)}<td><button className="more-btn" onClick={e=>e.stopPropagation()} aria-label="More actions"><MoreHorizontal size={17}/></button></td></tr>)}</tbody></table></div>
 }
 
 export const pageMeta: Record<string,{title:string;subtitle:string;action?:string}> = {
