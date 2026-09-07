@@ -10,7 +10,7 @@ export const pool = new Pool({
   connectionTimeoutMillis: 5_000,
 });
 
-export async function query<T = any>(text: string, params: unknown[] = []) {
+export async function query<T extends pg.QueryResultRow = pg.QueryResultRow>(text: string, params: unknown[] = []) {
   return pool.query<T>(text, params);
 }
 
