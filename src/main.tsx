@@ -10,6 +10,7 @@ import './screen-premium.css';
 import './details.css';
 import './deep-details.css';
 import './deepops.css';
+import './deepadmin.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
