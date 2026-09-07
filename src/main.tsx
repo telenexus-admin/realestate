@@ -11,6 +11,7 @@ import './details.css';
 import './deep-details.css';
 import './deepops.css';
 import './deepadmin.css';
+import './enterprise.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
