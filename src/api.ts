@@ -6,6 +6,30 @@ export type Session = {
   organization: { id: string; name: string };
 };
 
+export type WorkflowAction = {
+  id:string;
+  action_type:string;
+  title:string;
+  description?:string|null;
+  entity_type?:string|null;
+  entity_id?:string|null;
+  amount?:string|number|null;
+  currency:string;
+  risk_level:'low'|'medium'|'high'|'critical';
+  department:string;
+  status:'draft'|'pending'|'assigned'|'approved'|'rejected'|'executed'|'cancelled'|'blocked';
+  policy_state:'clear'|'review'|'blocked';
+  policy_reasons:string[];
+  requested_by?:string|null;
+  assigned_to?:string|null;
+  requested_by_name?:string|null;
+  assigned_to_name?:string|null;
+  approved_by_name?:string|null;
+  version:number;
+  created_at:string;
+  updated_at:string;
+};
+
 const TOKEN_KEY = 'propos_access_token';
 
 export function getToken() {
@@ -24,8 +48,16 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (token) headers.set('Authorization', `Bearer ${token}`);
   const response = await fetch(`${API_URL}${path}`, { ...init, headers });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data?.error || `Request failed (${response.status})`);
+  if (!response.ok) {
+    const detail = Array.isArray(data?.reasons) && data.reasons.length ? `: ${data.reasons.join(', ')}` : '';
+    throw new Error((typeof data?.error === 'string' ? data.error : `Request failed (${response.status})`) + detail);
+  }
   return data as T;
+}
+
+function idempotencyKey(prefix:string){
+  const id=globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `${prefix}-${id}`;
 }
 
 export const api = {
@@ -53,4 +85,18 @@ export const api = {
   maintenance: () => request<any[]>('/api/maintenance'),
   createMaintenance: (payload: unknown) => request('/api/maintenance', { method: 'POST', body: JSON.stringify(payload) }),
   rentRoll: () => request<any[]>('/api/reports/rent-roll'),
+  workflows: (params?:{status?:string;assignedTo?:string}) => {
+    const queryString=new URLSearchParams();
+    if(params?.status)queryString.set('status',params.status);
+    if(params?.assignedTo)queryString.set('assignedTo',params.assignedTo);
+    const suffix=queryString.toString()?`?${queryString}`:'';
+    return request<WorkflowAction[]>(`/api/workflows${suffix}`);
+  },
+  workflow: (id:string) => request<WorkflowAction & {events:any[]}>(`/api/workflows/${id}`),
+  createWorkflow: (payload:unknown) => request<WorkflowAction>('/api/workflows',{method:'POST',body:JSON.stringify(payload)}),
+  assignWorkflow: (id:string,assignedTo:string) => request<WorkflowAction>(`/api/workflows/${id}/assign`,{method:'PATCH',body:JSON.stringify({assignedTo})}),
+  approveWorkflow: (id:string,expectedVersion?:number,reason?:string) => request<WorkflowAction>(`/api/workflows/${id}/approve`,{method:'POST',headers:{'Idempotency-Key':idempotencyKey(`approve-${id}`)},body:JSON.stringify({expectedVersion,reason})}),
+  rejectWorkflow: (id:string,reason:string,expectedVersion?:number) => request<WorkflowAction>(`/api/workflows/${id}/reject`,{method:'POST',headers:{'Idempotency-Key':idempotencyKey(`reject-${id}`)},body:JSON.stringify({reason,expectedVersion})}),
+  executeWorkflow: (id:string) => request<WorkflowAction>(`/api/workflows/${id}/execute`,{method:'POST',headers:{'Idempotency-Key':idempotencyKey(`execute-${id}`)},body:'{}'}),
+  workflowEvents: (id:string) => request<any[]>(`/api/workflows/${id}/events`),
 };
