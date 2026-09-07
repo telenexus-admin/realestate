@@ -14,6 +14,7 @@ import './deepadmin.css';
 import './enterprise.css';
 import './enterprise2.css';
 import './interactions.css';
+import './interactions2.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
