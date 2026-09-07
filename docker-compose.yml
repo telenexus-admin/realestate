@@ -10,7 +10,8 @@ services:
     volumes:
       - propos_pg:/var/lib/postgresql/data
       - ./server/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
-      - ./server/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
+      - ./server/migrations/002_workflow_execution.sql:/docker-entrypoint-initdb.d/02-workflow-execution.sql:ro
+      - ./server/seed.sql:/docker-entrypoint-initdb.d/03-seed.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U propos -d propos"]
       interval: 5s
