@@ -1,5 +1,6 @@
 import { Activity, AlertTriangle, ArrowUpRight, Banknote, Building2, CalendarClock, CheckCircle2, CircleGauge, Clock3, MessageSquareText, ShieldCheck, Sparkles, TrendingUp, Users, Wrench } from 'lucide-react';
 import { MetricCard, Panel, Status } from '../ui';
+import { WorkflowExecutionCenter } from '../workflow-execution';
 
 const health=[
   {name:'Greenview Apartments',units:148,occ:96.6,collection:94.8,arrears:'KES 188K',maintenance:2,score:94},
@@ -26,5 +27,6 @@ export function CommandCenterPage(){
    <div><i><ShieldCheck size={14}/></i><p><strong>Inspection approved</strong><span>Greenview B-16 · Move-in checklist</span></p><time>1h</time></div>
   </div></Panel></div>
   <div className="command-footer-grid"><div className="mini-command"><Activity size={18}/><div><span>Automation engine</span><strong>3,842 runs · 99.4% successful</strong></div><Status value="Healthy"/></div><div className="mini-command"><Clock3 size={18}/><div><span>Next critical deadline</span><strong>Rent reminder batch · 17:00</strong></div><button>Review</button></div><div className="mini-command"><Building2 size={18}/><div><span>Portfolio movement</span><strong>+18 units added this month</strong></div><span className="positive-text">+2.5%</span></div></div>
+  <WorkflowExecutionCenter/>
  </>;
 }
