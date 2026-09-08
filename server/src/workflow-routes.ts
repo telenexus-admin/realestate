@@ -1,15 +1,11 @@
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import { createHash } from 'crypto';
 import { z } from 'zod';
 import { query, withTransaction } from './db.js';
-
-type AuthUser = { userId:string; organizationId:string; role:string };
-type AuthedRequest = Request & { auth?:AuthUser };
+import { hasPermission, type AuthedRequest, type AuthUser } from './auth.js';
 
 const router = Router();
-
-const APPROVER_ROLES = new Set(['owner','admin','accountant','property_manager']);
-const FINANCE_APPROVER_ROLES = new Set(['owner','admin','accountant']);
+const FINANCIAL_ACTIONS=new Set(['owner_payout','vendor_invoice','deposit_refund','write_off','bank_reconciliation','expense_approval']);
 
 function ctx(req:AuthedRequest){
   if(!req.auth?.organizationId || !req.auth?.userId) throw new Error('Authenticated organization context required');
@@ -17,8 +13,9 @@ function ctx(req:AuthedRequest){
 }
 
 function canApprove(role:string, actionType:string){
-  if(['owner_payout','vendor_invoice','deposit_refund','write_off','bank_reconciliation','expense_approval'].includes(actionType)) return FINANCE_APPROVER_ROLES.has(role);
-  return APPROVER_ROLES.has(role);
+  if(!hasPermission(role,'workflow.approve'))return false;
+  if(FINANCIAL_ACTIONS.has(actionType))return hasPermission(role,'finance.write');
+  return true;
 }
 
 function bodyHash(body:unknown){return createHash('sha256').update(JSON.stringify(body ?? {})).digest('hex');}
@@ -63,6 +60,7 @@ async function idempotent(req:AuthedRequest,res:Response,operation:string,work:(
 
 router.get('/workflows', async (req:AuthedRequest,res)=>{
   const auth=ctx(req);
+  if(!hasPermission(auth.role,'workflow.approve')&&!hasPermission(auth.role,'workflow.execute'))return res.status(403).json({error:'Workflow access is not permitted for this role'});
   const status=typeof req.query.status==='string'?req.query.status:null;
   const assigned=typeof req.query.assignedTo==='string'?req.query.assignedTo:null;
   const result=await query(`SELECT w.*,ru.first_name||' '||ru.last_name requested_by_name,au.first_name||' '||au.last_name assigned_to_name,
@@ -77,6 +75,7 @@ router.get('/workflows', async (req:AuthedRequest,res)=>{
 
 router.get('/workflows/:id', async (req:AuthedRequest,res)=>{
   const auth=ctx(req);
+  if(!hasPermission(auth.role,'workflow.approve')&&!hasPermission(auth.role,'workflow.execute'))return res.status(403).json({error:'Workflow access is not permitted for this role'});
   const result=await query(`SELECT * FROM workflow_actions WHERE id=$1 AND organization_id=$2`,[req.params.id,auth.organizationId]);
   if(!result.rowCount) return res.status(404).json({error:'Workflow action not found'});
   const events=await query(`SELECT e.*,u.first_name||' '||u.last_name actor_name FROM workflow_action_events e LEFT JOIN users u ON u.id=e.actor_user_id WHERE e.workflow_action_id=$1 AND e.organization_id=$2 ORDER BY e.created_at DESC`,[req.params.id,auth.organizationId]);
@@ -91,7 +90,9 @@ router.post('/workflows', async (req:AuthedRequest,res)=>{
   }).safeParse(req.body);
   if(!input.success) return res.status(400).json({error:input.error.flatten()});
   const d=input.data;
+  if(FINANCIAL_ACTIONS.has(d.actionType)&&!hasPermission(auth.role,'finance.read')&&!hasPermission(auth.role,'finance.write'))return res.status(403).json({error:'Financial workflow access is not permitted for this role'});
   const row=await withTransaction(async client=>{
+    if(d.assignedTo){const member=await client.query(`SELECT 1 FROM organization_users WHERE organization_id=$1 AND user_id=$2`,[auth.organizationId,d.assignedTo]);if(!member.rowCount)throw Object.assign(new Error('Assignee is not a member of this organization'),{status:400});}
     const inserted=await client.query(`INSERT INTO workflow_actions(organization_id,action_type,title,description,entity_type,entity_id,amount,currency,risk_level,department,status,policy_state,policy_reasons,requested_by,assigned_to)
       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14,$15) RETURNING *`,[auth.organizationId,d.actionType,d.title,d.description||null,d.entityType||null,d.entityId||null,d.amount??null,d.currency,d.riskLevel,d.department,d.assignedTo?'assigned':'pending',d.policyState,JSON.stringify(d.policyReasons),auth.userId,d.assignedTo||null]);
     await event(client,auth,inserted.rows[0].id,'created',null,inserted.rows[0].status,undefined,{riskLevel:d.riskLevel});
@@ -103,7 +104,7 @@ router.post('/workflows', async (req:AuthedRequest,res)=>{
 
 router.patch('/workflows/:id/assign', async (req:AuthedRequest,res)=>{
   const auth=ctx(req);
-  if(!APPROVER_ROLES.has(auth.role)) return res.status(403).json({error:'Your role cannot assign workflow actions'});
+  if(!hasPermission(auth.role,'workflow.approve')) return res.status(403).json({error:'Your role cannot assign workflow actions'});
   const input=z.object({assignedTo:z.string().uuid()}).safeParse(req.body);
   if(!input.success) return res.status(400).json({error:input.error.flatten()});
   const row=await withTransaction(async client=>{
@@ -172,13 +173,14 @@ router.post('/workflows/:id/reject', async (req:AuthedRequest,res)=>idempotent(r
 
 router.post('/workflows/:id/execute', async (req:AuthedRequest,res)=>idempotent(req,res,`workflow.execute:${req.params.id}`,async()=>{
   const auth=ctx(req);
-  if(!FINANCE_APPROVER_ROLES.has(auth.role)) return {status:403,body:{error:'Your role cannot execute controlled workflow actions'}};
+  if(!hasPermission(auth.role,'workflow.execute')) return {status:403,body:{error:'Your role cannot execute controlled workflow actions'}};
   const row=await withTransaction(async client=>{
     const existing=await client.query(`SELECT * FROM workflow_actions WHERE id=$1 AND organization_id=$2 FOR UPDATE`,[req.params.id,auth.organizationId]);
     if(!existing.rowCount) return null;
     const current=existing.rows[0];
     if(current.status==='executed') return current;
     if(current.status!=='approved') throw Object.assign(new Error('Only approved workflow actions can be executed'),{status:409});
+    if(FINANCIAL_ACTIONS.has(current.action_type)&&!hasPermission(auth.role,'finance.write'))throw Object.assign(new Error('Financial execution permission is required'),{status:403});
     const updated=await client.query(`UPDATE workflow_actions SET status='executed',executed_at=now() WHERE id=$1 AND organization_id=$2 RETURNING *`,[current.id,auth.organizationId]);
     await event(client,auth,current.id,'executed','approved','executed',undefined,{actionType:current.action_type});
     await audit(client,auth,'workflow.execute',current.id,{amount:current.amount,actionType:current.action_type});
@@ -190,6 +192,7 @@ router.post('/workflows/:id/execute', async (req:AuthedRequest,res)=>idempotent(
 
 router.get('/workflows/:id/events', async (req:AuthedRequest,res)=>{
   const auth=ctx(req);
+  if(!hasPermission(auth.role,'workflow.approve')&&!hasPermission(auth.role,'workflow.execute'))return res.status(403).json({error:'Workflow access is not permitted for this role'});
   const result=await query(`SELECT e.*,u.first_name||' '||u.last_name actor_name FROM workflow_action_events e LEFT JOIN users u ON u.id=e.actor_user_id WHERE e.workflow_action_id=$1 AND e.organization_id=$2 ORDER BY e.created_at DESC`,[req.params.id,auth.organizationId]);
   res.json(result.rows);
 });
