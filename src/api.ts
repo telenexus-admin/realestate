@@ -6,6 +6,16 @@ export type Session = {
   organization: { id: string; name: string };
 };
 
+export type AuthSession = {
+  id:string;
+  user_agent?:string|null;
+  ip?:string|null;
+  created_at:string;
+  last_seen_at:string;
+  expires_at:string;
+  current:boolean;
+};
+
 export type WorkflowAction = {
   id:string;
   action_type:string;
@@ -41,12 +51,26 @@ export function setToken(token: string | null) {
   else localStorage.removeItem(TOKEN_KEY);
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function refreshSession():Promise<Session|null>{
+  try{
+    const response=await fetch(`${API_URL}/api/auth/refresh`,{method:'POST',credentials:'include'});
+    if(!response.ok){setToken(null);return null;}
+    const session=await response.json() as Session;
+    setToken(session.token);
+    return session;
+  }catch{return null;}
+}
+
+async function request<T>(path: string, init: RequestInit = {}, allowRefresh=true): Promise<T> {
   const headers = new Headers(init.headers);
   if (init.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
   const token = getToken();
   if (token) headers.set('Authorization', `Bearer ${token}`);
-  const response = await fetch(`${API_URL}${path}`, { ...init, headers });
+  let response = await fetch(`${API_URL}${path}`, { ...init, headers, credentials:'include' });
+  if(response.status===401 && allowRefresh && token && !path.startsWith('/api/auth/')){
+    const refreshed=await refreshSession();
+    if(refreshed)return request<T>(path,init,false);
+  }
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     const detail = Array.isArray(data?.reasons) && data.reasons.length ? `: ${data.reasons.join(', ')}` : '';
@@ -62,13 +86,23 @@ function idempotencyKey(prefix:string){
 
 export const api = {
   health: () => request<{ ok: boolean; service: string }>('/health'),
-  devLogin: async (email: string, organizationSlug: string) => {
-    const session = await request<Session>('/api/auth/dev-login', {
-      method: 'POST', body: JSON.stringify({ email, organizationSlug }),
-    });
+  login: async (email:string,password:string,organizationSlug:string) => {
+    const session=await request<Session>('/api/auth/login',{method:'POST',body:JSON.stringify({email,password,organizationSlug})},false);
     setToken(session.token);
     return session;
   },
+  devLogin: async (email: string, organizationSlug: string) => {
+    const session = await request<Session>('/api/auth/dev-login', {
+      method: 'POST', body: JSON.stringify({ email, organizationSlug }),
+    },false);
+    setToken(session.token);
+    return session;
+  },
+  refreshSession,
+  logout: async()=>{try{await request<void>('/api/auth/logout',{method:'POST'},false);}finally{setToken(null)}},
+  logoutAll: async()=>{try{await request<void>('/api/auth/logout-all',{method:'POST'},false);}finally{setToken(null)}},
+  sessions:()=>request<AuthSession[]>('/api/auth/sessions'),
+  revokeSession:(id:string)=>request<void>(`/api/auth/sessions/${id}`,{method:'DELETE'}),
   dashboard: () => request('/api/dashboard'),
   properties: () => request<any[]>('/api/properties'),
   createProperty: (payload: unknown) => request('/api/properties', { method: 'POST', body: JSON.stringify(payload) }),
