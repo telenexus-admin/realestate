@@ -18,6 +18,7 @@ export type AuthSession = {
 
 export type MfaStatus={enabled:boolean;setupPending:boolean;recoveryCodesRemaining:number};
 export type MfaSetup={secret:string;otpauthUri:string};
+export type BillingPreview={periodStart:string;periodEnd:string;count:number;total:number;items:any[]};
 
 export class ApiError extends Error{
   status:number;
@@ -126,6 +127,14 @@ export const api = {
   maintenance: () => request<any[]>('/api/maintenance'),
   createMaintenance: (payload: unknown) => request('/api/maintenance', { method: 'POST', body: JSON.stringify(payload) }),
   rentRoll: () => request<any[]>('/api/reports/rent-roll'),
+  rentSchedules:()=>request<any[]>('/api/rental/rent-schedules'),
+  createRentSchedule:(payload:unknown)=>request('/api/rental/rent-schedules',{method:'POST',body:JSON.stringify(payload)}),
+  billingPreview:(periodStart:string,periodEnd:string,propertyId?:string)=>request<BillingPreview>('/api/rental/billing/preview',{method:'POST',body:JSON.stringify({periodStart,periodEnd,propertyId})}),
+  postBilling:(periodStart:string,periodEnd:string,propertyId?:string)=>request('/api/rental/billing/post',{method:'POST',body:JSON.stringify({periodStart,periodEnd,propertyId,runKey:idempotencyKey(`billing-${periodStart}-${propertyId||'all'}`)})}),
+  billingRuns:()=>request<any[]>('/api/rental/billing/runs'),
+  tenantKyc:(tenantId:string)=>request<any[]>(`/api/rental/tenant/${tenantId}/kyc`),
+  createTenantKyc:(tenantId:string,payload:unknown)=>request(`/api/rental/tenant/${tenantId}/kyc`,{method:'POST',body:JSON.stringify(payload)}),
+  turnovers:()=>request<any[]>('/api/rental/turnovers'),
   workflows: (params?:{status?:string;assignedTo?:string}) => {
     const queryString=new URLSearchParams();
     if(params?.status)queryString.set('status',params.status);
