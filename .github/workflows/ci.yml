@@ -18,6 +18,25 @@ jobs:
 
   api:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: propos
+          POSTGRES_USER: propos
+          POSTGRES_PASSWORD: propos
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U propos -d propos"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://propos:propos@127.0.0.1:5432/propos
+      JWT_SECRET: ci-only-long-random-secret-for-propos-auth-tests
+      CORS_ORIGIN: http://localhost:5173
+      NODE_ENV: test
     defaults:
       run:
         working-directory: server
@@ -28,3 +47,17 @@ jobs:
           node-version: 22
       - run: npm install
       - run: npm run typecheck
+      - name: Bootstrap test database
+        run: npx tsx src/bootstrap-test-db.ts
+      - name: Start API
+        run: |
+          npm start > /tmp/propos-api.log 2>&1 &
+          echo $! > /tmp/propos-api.pid
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:4000/health >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          cat /tmp/propos-api.log
+          exit 1
+      - name: Auth session smoke test
+        run: npm run smoke:auth
