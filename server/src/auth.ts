@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { createHash, pbkdf2Sync, randomBytes, randomUUID, timingSafeEqual } from 'crypto';
 import { z } from 'zod';
 import { query, withTransaction } from './db.js';
+import { generateMfaSetup, generateRecoveryCodes, verifyMfaCredential } from './mfa.js';
 
 export type AuthUser = {
   userId:string;
@@ -23,6 +24,9 @@ const loginWindows=new Map<string,{count:number;resetAt:number}>();
 
 if(process.env.NODE_ENV==='production' && JWT_SECRET==='development-secret'){
   throw new Error('JWT_SECRET must be configured in production');
+}
+if(process.env.NODE_ENV==='production' && !process.env.MFA_ENCRYPTION_KEY){
+  throw new Error('MFA_ENCRYPTION_KEY must be configured in production');
 }
 
 function clientIp(req:Request){
@@ -123,8 +127,8 @@ export async function auth(req:AuthedRequest,res:Response,next:NextFunction){
 
 const permissionMatrix:Record<string,Set<string>>={
   owner:new Set(['*']),admin:new Set(['*']),
-  accountant:new Set(['finance.read','finance.write','reports.read','workflow.approve','workflow.execute']),
-  property_manager:new Set(['portfolio.read','property.write','tenant.write','lease.write','maintenance.write','reports.read','workflow.approve']),
+  accountant:new Set(['portfolio.read','finance.read','finance.write','reports.read','workflow.approve','workflow.execute']),
+  property_manager:new Set(['portfolio.read','finance.read','property.write','tenant.write','lease.write','maintenance.write','reports.read','workflow.approve']),
   leasing_agent:new Set(['portfolio.read','tenant.write','lease.write']),
   caretaker:new Set(['portfolio.read','maintenance.write']),
   maintenance:new Set(['portfolio.read','maintenance.write']),
@@ -138,16 +142,16 @@ export function requirePermission(permission:string){return (req:AuthedRequest,r
 };}
 
 router.post('/login',async(req,res)=>{
-  const input=z.object({email:z.string().email(),password:z.string().min(8).max(200),organizationSlug:z.string().min(1).max(80)}).safeParse(req.body);
+  const input=z.object({email:z.string().email(),password:z.string().min(8).max(200),organizationSlug:z.string().min(1).max(80),mfaCode:z.string().min(6).max(32).optional()}).safeParse(req.body);
   if(!input.success)return res.status(400).json({error:input.error.flatten()});
-  const {email,password,organizationSlug}=input.data;
+  const {email,password,organizationSlug,mfaCode}=input.data;
   const ipKey=`ip:${clientIp(req)||'unknown'}`,emailKey=`email:${email.toLowerCase()}`;
-  if(rateLimited(ipKey)||rateLimited(emailKey,6)){
+  if(rateLimited(ipKey)||rateLimited(emailKey,8)){
     await recordAttempt(email,organizationSlug,req,false,'rate_limited');
     return res.status(429).json({error:'Too many login attempts. Try again later.'});
   }
-  const found=await query<{id:string;password_hash:string;first_name:string;last_name:string;status:string;locked_until:Date|null;failed_login_count:number;organization_id:string;organization_name:string;organization_status:string;role:string}>(`
-    SELECT u.id,u.password_hash,u.first_name,u.last_name,u.status,u.locked_until,u.failed_login_count,
+  const found=await query<{id:string;password_hash:string;first_name:string;last_name:string;status:string;locked_until:Date|null;failed_login_count:number;organization_id:string;organization_name:string;organization_status:string;role:string;mfa_enabled:boolean;mfa_secret_ciphertext:string|null;mfa_recovery_code_hashes:string[]}>(`
+    SELECT u.id,u.password_hash,u.first_name,u.last_name,u.status,u.locked_until,u.failed_login_count,u.mfa_enabled,u.mfa_secret_ciphertext,u.mfa_recovery_code_hashes,
       o.id organization_id,o.name organization_name,o.status organization_status,ou.role
     FROM users u JOIN organization_users ou ON ou.user_id=u.id JOIN organizations o ON o.id=ou.organization_id
     WHERE lower(u.email)=lower($1) AND o.slug=$2 LIMIT 1`,[email,organizationSlug]);
@@ -166,10 +170,25 @@ router.post('/login',async(req,res)=>{
     await recordAttempt(email,organizationSlug,req,false,'invalid_credentials');
     return res.status(401).json({error:'Invalid email, password or workspace'});
   }
+  if(row.mfa_enabled){
+    if(!mfaCode){
+      await recordAttempt(email,organizationSlug,req,false,'mfa_required');
+      return res.status(428).json({error:'Multi-factor authentication required',mfaRequired:true});
+    }
+    const verified=verifyMfaCredential(row.mfa_secret_ciphertext,row.mfa_recovery_code_hashes,mfaCode);
+    if(!verified.ok){
+      await recordAttempt(email,organizationSlug,req,false,'invalid_mfa');
+      return res.status(401).json({error:'Invalid multi-factor authentication code',mfaRequired:true});
+    }
+    if(verified.recoveryHash){
+      await query(`UPDATE users SET mfa_recovery_code_hashes=array_remove(mfa_recovery_code_hashes,$1) WHERE id=$2`,[verified.recoveryHash,row.id]);
+      await audit(row.id,row.organization_id,'auth.mfa_recovery_used',{});
+    }
+  }
   await query(`UPDATE users SET failed_login_count=0,locked_until=NULL,last_login_at=now() WHERE id=$1`,[row.id]);
   const session=await createSession(req,res,{id:row.id,organizationId:row.organization_id});
   await recordAttempt(email,organizationSlug,req,true,'success');
-  await audit(row.id,row.organization_id,'auth.login',{sessionId:session.sessionId});
+  await audit(row.id,row.organization_id,'auth.login',{sessionId:session.sessionId,mfa:row.mfa_enabled});
   res.json({token:session.token,user:{id:row.id,name:`${row.first_name} ${row.last_name}`,role:row.role},organization:{id:row.organization_id,name:row.organization_name}});
 });
 
@@ -233,6 +252,57 @@ router.post('/logout-all',auth,async(req:AuthedRequest,res)=>{
   await audit(a.userId,a.organizationId,'auth.logout_all',{});
   res.setHeader('Set-Cookie',clearCookie());
   res.status(204).send();
+});
+
+router.get('/mfa/status',auth,async(req:AuthedRequest,res)=>{
+  const a=req.auth!;
+  const result=await query<{mfa_enabled:boolean;mfa_secret_ciphertext:string|null;mfa_recovery_code_hashes:string[]}>(`SELECT mfa_enabled,mfa_secret_ciphertext,mfa_recovery_code_hashes FROM users WHERE id=$1`,[a.userId]);
+  const row=result.rows[0];
+  res.json({enabled:!!row?.mfa_enabled,setupPending:!!row?.mfa_secret_ciphertext&&!row?.mfa_enabled,recoveryCodesRemaining:row?.mfa_recovery_code_hashes?.length||0});
+});
+
+router.post('/mfa/setup',auth,async(req:AuthedRequest,res)=>{
+  const a=req.auth!;
+  const user=await query<{email:string;mfa_enabled:boolean}>(`SELECT email,mfa_enabled FROM users WHERE id=$1`,[a.userId]);
+  if(!user.rowCount)return res.status(404).json({error:'User not found'});
+  if(user.rows[0].mfa_enabled)return res.status(409).json({error:'MFA is already enabled'});
+  const setup=generateMfaSetup(user.rows[0].email);
+  await query(`UPDATE users SET mfa_secret_ciphertext=$1,mfa_recovery_code_hashes='{}'::text[] WHERE id=$2`,[setup.encryptedSecret,a.userId]);
+  await audit(a.userId,a.organizationId,'auth.mfa_setup_started',{});
+  res.json({secret:setup.secret,otpauthUri:setup.otpauthUri});
+});
+
+router.post('/mfa/enable',auth,async(req:AuthedRequest,res)=>{
+  const a=req.auth!;
+  const input=z.object({code:z.string().min(6).max(32)}).safeParse(req.body);
+  if(!input.success)return res.status(400).json({error:input.error.flatten()});
+  const user=await query<{mfa_enabled:boolean;mfa_secret_ciphertext:string|null}>(`SELECT mfa_enabled,mfa_secret_ciphertext FROM users WHERE id=$1`,[a.userId]);
+  if(!user.rowCount)return res.status(404).json({error:'User not found'});
+  if(user.rows[0].mfa_enabled)return res.status(409).json({error:'MFA is already enabled'});
+  if(!user.rows[0].mfa_secret_ciphertext)return res.status(409).json({error:'Start MFA setup before enabling it'});
+  const verified=verifyMfaCredential(user.rows[0].mfa_secret_ciphertext,[],input.data.code);
+  if(!verified.ok)return res.status(400).json({error:'Invalid authenticator code'});
+  const recovery=generateRecoveryCodes();
+  await query(`UPDATE users SET mfa_enabled=true,mfa_recovery_code_hashes=$1::text[] WHERE id=$2`,[recovery.hashes,a.userId]);
+  await audit(a.userId,a.organizationId,'auth.mfa_enabled',{recoveryCodes:recovery.codes.length});
+  res.json({enabled:true,recoveryCodes:recovery.codes});
+});
+
+router.post('/mfa/disable',auth,async(req:AuthedRequest,res)=>{
+  const a=req.auth!;
+  const input=z.object({password:z.string().min(8).max(200),code:z.string().min(6).max(32)}).safeParse(req.body);
+  if(!input.success)return res.status(400).json({error:input.error.flatten()});
+  const user=await query<{password_hash:string;mfa_enabled:boolean;mfa_secret_ciphertext:string|null;mfa_recovery_code_hashes:string[]}>(`SELECT password_hash,mfa_enabled,mfa_secret_ciphertext,mfa_recovery_code_hashes FROM users WHERE id=$1`,[a.userId]);
+  if(!user.rowCount)return res.status(404).json({error:'User not found'});
+  const row=user.rows[0];
+  if(!row.mfa_enabled)return res.status(409).json({error:'MFA is not enabled'});
+  if(!verifyPassword(input.data.password,row.password_hash))return res.status(401).json({error:'Password verification failed'});
+  const verified=verifyMfaCredential(row.mfa_secret_ciphertext,row.mfa_recovery_code_hashes,input.data.code);
+  if(!verified.ok)return res.status(401).json({error:'MFA verification failed'});
+  await query(`UPDATE users SET mfa_enabled=false,mfa_secret_ciphertext=NULL,mfa_recovery_code_hashes='{}'::text[] WHERE id=$1`,[a.userId]);
+  await query(`UPDATE auth_sessions SET revoked_at=now(),revoked_reason='mfa_disabled' WHERE user_id=$1 AND organization_id=$2 AND id<>$3 AND revoked_at IS NULL`,[a.userId,a.organizationId,a.sessionId]);
+  await audit(a.userId,a.organizationId,'auth.mfa_disabled',{});
+  res.json({enabled:false});
 });
 
 router.post('/dev-login',async(req,res)=>{
