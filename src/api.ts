@@ -19,6 +19,7 @@ export type AuthSession = {
 export type MfaStatus={enabled:boolean;setupPending:boolean;recoveryCodesRemaining:number};
 export type MfaSetup={secret:string;otpauthUri:string};
 export type BillingPreview={periodStart:string;periodEnd:string;count:number;total:number;items:any[]};
+export type TenantLifecycle={tenant:any;contacts:any[];kyc:any[];leases:any[];wallet:{balance:number;entries:any[]};paymentPlans:any[];maintenance:any[];documents:any[]};
 
 export class ApiError extends Error{
   status:number;
@@ -132,8 +133,19 @@ export const api = {
   billingPreview:(periodStart:string,periodEnd:string,propertyId?:string)=>request<BillingPreview>('/api/rental/billing/preview',{method:'POST',body:JSON.stringify({periodStart,periodEnd,propertyId})}),
   postBilling:(periodStart:string,periodEnd:string,propertyId?:string)=>request('/api/rental/billing/post',{method:'POST',body:JSON.stringify({periodStart,periodEnd,propertyId,runKey:idempotencyKey(`billing-${periodStart}-${propertyId||'all'}`)})}),
   billingRuns:()=>request<any[]>('/api/rental/billing/runs'),
+  tenantLifecycle:(tenantId:string)=>request<TenantLifecycle>(`/api/rental/tenant/${tenantId}/lifecycle`),
+  tenantContacts:(tenantId:string)=>request<any[]>(`/api/rental/tenant/${tenantId}/contacts`),
+  createTenantContact:(tenantId:string,payload:unknown)=>request(`/api/rental/tenant/${tenantId}/contacts`,{method:'POST',body:JSON.stringify(payload)}),
   tenantKyc:(tenantId:string)=>request<any[]>(`/api/rental/tenant/${tenantId}/kyc`),
   createTenantKyc:(tenantId:string,payload:unknown)=>request(`/api/rental/tenant/${tenantId}/kyc`,{method:'POST',body:JSON.stringify(payload)}),
+  tenantWallet:(tenantId:string)=>request<{balance:number;entries:any[]}>(`/api/rental/tenant/${tenantId}/wallet`),
+  createWalletEntry:(tenantId:string,payload:unknown)=>request(`/api/rental/tenant/${tenantId}/wallet`,{method:'POST',body:JSON.stringify(payload)}),
+  tenantPaymentPlans:(tenantId:string)=>request<any[]>(`/api/rental/tenant/${tenantId}/payment-plans`),
+  createPaymentPlan:(tenantId:string,payload:unknown)=>request(`/api/rental/tenant/${tenantId}/payment-plans`,{method:'POST',body:JSON.stringify(payload)}),
+  leaseParties:(leaseId:string)=>request<any[]>(`/api/rental/lease/${leaseId}/parties`),
+  createLeaseParty:(leaseId:string,payload:unknown)=>request(`/api/rental/lease/${leaseId}/parties`,{method:'POST',body:JSON.stringify(payload)}),
+  leaseAmendments:(leaseId:string)=>request<any[]>(`/api/rental/lease/${leaseId}/amendments`),
+  createLeaseAmendment:(leaseId:string,payload:unknown)=>request(`/api/rental/lease/${leaseId}/amendments`,{method:'POST',body:JSON.stringify(payload)}),
   turnovers:()=>request<any[]>('/api/rental/turnovers'),
   workflows: (params?:{status?:string;assignedTo?:string}) => {
     const queryString=new URLSearchParams();
