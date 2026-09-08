@@ -33,6 +33,7 @@ function hotp(secret:string,counter:number,digits=6){
   const code=((digest[offset]&0x7f)<<24)|((digest[offset+1]&0xff)<<16)|((digest[offset+2]&0xff)<<8)|(digest[offset+3]&0xff);
   return String(code%10**digits).padStart(digits,'0');
 }
+export function generateTotpCode(secret:string,at=Date.now()){return hotp(secret,Math.floor(at/30000));}
 export function verifyTotp(secret:string,code:string,at=Date.now()){
   if(!/^\d{6}$/.test(code))return false;const counter=Math.floor(at/30000);
   for(const drift of [-1,0,1]){const candidate=hotp(secret,counter+drift);if(timingSafeEqual(Buffer.from(candidate),Buffer.from(code)))return true;}
