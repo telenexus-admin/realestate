@@ -16,6 +16,15 @@ export type AuthSession = {
   current:boolean;
 };
 
+export type MfaStatus={enabled:boolean;setupPending:boolean;recoveryCodesRemaining:number};
+export type MfaSetup={secret:string;otpauthUri:string};
+
+export class ApiError extends Error{
+  status:number;
+  data:any;
+  constructor(message:string,status:number,data:any){super(message);this.name='ApiError';this.status=status;this.data=data;}
+}
+
 export type WorkflowAction = {
   id:string;
   action_type:string;
@@ -42,14 +51,8 @@ export type WorkflowAction = {
 
 const TOKEN_KEY = 'propos_access_token';
 
-export function getToken() {
-  return localStorage.getItem(TOKEN_KEY);
-}
-
-export function setToken(token: string | null) {
-  if (token) localStorage.setItem(TOKEN_KEY, token);
-  else localStorage.removeItem(TOKEN_KEY);
-}
+export function getToken() {return localStorage.getItem(TOKEN_KEY);}
+export function setToken(token: string | null) {if (token) localStorage.setItem(TOKEN_KEY, token); else localStorage.removeItem(TOKEN_KEY);}
 
 async function refreshSession():Promise<Session|null>{
   try{
@@ -66,15 +69,17 @@ async function request<T>(path: string, init: RequestInit = {}, allowRefresh=tru
   if (init.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
   const token = getToken();
   if (token) headers.set('Authorization', `Bearer ${token}`);
-  let response = await fetch(`${API_URL}${path}`, { ...init, headers, credentials:'include' });
+  const response = await fetch(`${API_URL}${path}`, { ...init, headers, credentials:'include' });
   if(response.status===401 && allowRefresh && token && !path.startsWith('/api/auth/')){
     const refreshed=await refreshSession();
     if(refreshed)return request<T>(path,init,false);
   }
+  if(response.status===204)return undefined as T;
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     const detail = Array.isArray(data?.reasons) && data.reasons.length ? `: ${data.reasons.join(', ')}` : '';
-    throw new Error((typeof data?.error === 'string' ? data.error : `Request failed (${response.status})`) + detail);
+    const message=(typeof data?.error === 'string' ? data.error : `Request failed (${response.status})`) + detail;
+    throw new ApiError(message,response.status,data);
   }
   return data as T;
 }
@@ -86,15 +91,13 @@ function idempotencyKey(prefix:string){
 
 export const api = {
   health: () => request<{ ok: boolean; service: string }>('/health'),
-  login: async (email:string,password:string,organizationSlug:string) => {
-    const session=await request<Session>('/api/auth/login',{method:'POST',body:JSON.stringify({email,password,organizationSlug})},false);
+  login: async (email:string,password:string,organizationSlug:string,mfaCode?:string) => {
+    const session=await request<Session>('/api/auth/login',{method:'POST',body:JSON.stringify({email,password,organizationSlug,mfaCode})},false);
     setToken(session.token);
     return session;
   },
   devLogin: async (email: string, organizationSlug: string) => {
-    const session = await request<Session>('/api/auth/dev-login', {
-      method: 'POST', body: JSON.stringify({ email, organizationSlug }),
-    },false);
+    const session = await request<Session>('/api/auth/dev-login', {method: 'POST', body: JSON.stringify({ email, organizationSlug })},false);
     setToken(session.token);
     return session;
   },
@@ -103,6 +106,10 @@ export const api = {
   logoutAll: async()=>{try{await request<void>('/api/auth/logout-all',{method:'POST'},false);}finally{setToken(null)}},
   sessions:()=>request<AuthSession[]>('/api/auth/sessions'),
   revokeSession:(id:string)=>request<void>(`/api/auth/sessions/${id}`,{method:'DELETE'}),
+  mfaStatus:()=>request<MfaStatus>('/api/auth/mfa/status'),
+  startMfaSetup:()=>request<MfaSetup>('/api/auth/mfa/setup',{method:'POST',body:'{}'}),
+  enableMfa:(code:string)=>request<{enabled:true;recoveryCodes:string[]}>('/api/auth/mfa/enable',{method:'POST',body:JSON.stringify({code})}),
+  disableMfa:(password:string,code:string)=>request<{enabled:false}>('/api/auth/mfa/disable',{method:'POST',body:JSON.stringify({password,code})}),
   dashboard: () => request('/api/dashboard'),
   properties: () => request<any[]>('/api/properties'),
   createProperty: (payload: unknown) => request('/api/properties', { method: 'POST', body: JSON.stringify(payload) }),
