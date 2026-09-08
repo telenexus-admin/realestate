@@ -8,7 +8,8 @@ function org(req:AuthedRequest){if(!req.auth?.organizationId)throw new Error('Or
 function scope(req:AuthedRequest){return req.auth?.propertyScope||[];}
 function inScope(req:AuthedRequest,propertyId:string){const s=scope(req);return s.length===0||s.includes(propertyId);}
 function monthKey(date:string){return date.slice(0,7).replace('-','');}
-async function tenantAccess(req:AuthedRequest,tenantId:string){
+async function tenantAccess(req:AuthedRequest,tenantParam:string|string[]){
+ const tenantId=Array.isArray(tenantParam)?tenantParam[0]:tenantParam;
  const result=await query<{id:string;property_id:string|null}>(`SELECT rt.id,(SELECT u.property_id FROM leases l JOIN units u ON u.id=l.unit_id WHERE l.organization_id=rt.organization_id AND l.tenant_id=rt.id AND l.status IN ('active','expiring') ORDER BY l.end_date DESC LIMIT 1) property_id FROM rental_tenants rt WHERE rt.id=$1 AND rt.organization_id=$2`,[tenantId,org(req)]);
  if(!result.rowCount)throw Object.assign(new Error('Tenant not found'),{status:404});
  const propertyId=result.rows[0].property_id;if(propertyId&&!inScope(req,propertyId))throw Object.assign(new Error('Tenant is outside your property scope'),{status:403});
