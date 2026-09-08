@@ -1,33 +1,19 @@
 import express, { NextFunction, Request, Response } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import 'dotenv/config';
 import { query, withTransaction } from './db.js';
 import workflowRouter from './workflow-routes.js';
-
-type AuthUser = { userId: string; organizationId: string; role: string };
-type AuthedRequest = Request & { auth?: AuthUser };
+import authRouter, { auth, requirePermission, type AuthedRequest } from './auth.js';
 
 const app = express();
+app.set('trust proxy', 1);
 app.use(helmet());
 app.use(cors({ origin: process.env.CORS_ORIGIN?.split(',') || true, credentials: true }));
 app.use(express.json({ limit: '2mb' }));
 
 const PORT = Number(process.env.PORT || 4000);
-const JWT_SECRET = process.env.JWT_SECRET || 'development-secret';
-
-function auth(req: AuthedRequest, res: Response, next: NextFunction) {
-  const bearer = req.headers.authorization;
-  if (!bearer?.startsWith('Bearer ')) return res.status(401).json({ error: 'Authentication required' });
-  try {
-    req.auth = jwt.verify(bearer.slice(7), JWT_SECRET) as AuthUser;
-    next();
-  } catch {
-    res.status(401).json({ error: 'Invalid or expired token' });
-  }
-}
 
 function tenantId(req: AuthedRequest) {
   if (!req.auth?.organizationId) throw new Error('Organization context missing');
@@ -39,19 +25,7 @@ app.get('/health', async (_req, res) => {
   catch { res.status(503).json({ ok: false, service: 'polyizon-propos-api' }); }
 });
 
-app.post('/api/auth/dev-login', async (req, res) => {
-  const input = z.object({ email: z.string().email(), organizationSlug: z.string().min(1) }).safeParse(req.body);
-  if (!input.success) return res.status(400).json({ error: input.error.flatten() });
-  const found = await query<{ user_id:string; organization_id:string; role:string; first_name:string; last_name:string; organization_name:string }>(`
-    SELECT u.id user_id, ou.organization_id, ou.role, u.first_name, u.last_name, o.name organization_name
-    FROM users u JOIN organization_users ou ON ou.user_id=u.id JOIN organizations o ON o.id=ou.organization_id
-    WHERE lower(u.email)=lower($1) AND o.slug=$2 LIMIT 1`, [input.data.email, input.data.organizationSlug]);
-  if (!found.rowCount) return res.status(404).json({ error: 'User or organization not found' });
-  const row = found.rows[0];
-  const token = jwt.sign({ userId:row.user_id, organizationId:row.organization_id, role:row.role }, JWT_SECRET, { expiresIn:'12h' });
-  res.json({ token, user:{ id:row.user_id, name:`${row.first_name} ${row.last_name}`, role:row.role }, organization:{ id:row.organization_id, name:row.organization_name } });
-});
-
+app.use('/api/auth', authRouter);
 app.use('/api', auth);
 app.use('/api', workflowRouter);
 
@@ -79,7 +53,7 @@ app.get('/api/properties', async (req: AuthedRequest, res) => {
   res.json(result.rows);
 });
 
-app.post('/api/properties', async (req: AuthedRequest, res) => {
+app.post('/api/properties', requirePermission('property.write'), async (req: AuthedRequest, res) => {
   const input=z.object({ name:z.string().min(2), code:z.string().min(1).optional(), propertyType:z.string().default('residential'), ownerId:z.string().uuid().optional(), address:z.string().optional(), city:z.string().optional(), county:z.string().optional() }).safeParse(req.body);
   if(!input.success) return res.status(400).json({error:input.error.flatten()});
   const d=input.data, result=await query(`INSERT INTO properties(organization_id,owner_id,name,code,property_type,address,city,county) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,[tenantId(req),d.ownerId||null,d.name,d.code||null,d.propertyType,d.address||null,d.city||null,d.county||null]);
@@ -94,7 +68,7 @@ app.get('/api/units', async (req: AuthedRequest, res) => {
   res.json(result.rows);
 });
 
-app.post('/api/units', async (req: AuthedRequest, res) => {
+app.post('/api/units', requirePermission('property.write'), async (req: AuthedRequest, res) => {
   const input=z.object({ propertyId:z.string().uuid(), buildingId:z.string().uuid().optional(), unitNumber:z.string().min(1), unitType:z.string().default('apartment'), bedrooms:z.number().int().nonnegative().optional(), marketRent:z.number().nonnegative().default(0), depositAmount:z.number().nonnegative().default(0) }).safeParse(req.body);
   if(!input.success) return res.status(400).json({error:input.error.flatten()});
   const d=input.data, result=await query(`INSERT INTO units(organization_id,property_id,building_id,unit_number,unit_type,bedrooms,market_rent,deposit_amount) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,[tenantId(req),d.propertyId,d.buildingId||null,d.unitNumber,d.unitType,d.bedrooms??null,d.marketRent,d.depositAmount]);
@@ -110,7 +84,7 @@ app.get('/api/tenants', async (req: AuthedRequest, res) => {
   res.json(result.rows);
 });
 
-app.post('/api/tenants', async (req: AuthedRequest, res) => {
+app.post('/api/tenants', requirePermission('tenant.write'), async (req: AuthedRequest, res) => {
   const input=z.object({ firstName:z.string().min(1), lastName:z.string().min(1), phone:z.string().min(6), email:z.string().email().optional(), nationalId:z.string().optional() }).safeParse(req.body);
   if(!input.success) return res.status(400).json({error:input.error.flatten()});
   const d=input.data,result=await query(`INSERT INTO rental_tenants(organization_id,first_name,last_name,phone,email,national_id) VALUES($1,$2,$3,$4,$5,$6) RETURNING *`,[tenantId(req),d.firstName,d.lastName,d.phone,d.email||null,d.nationalId||null]);
@@ -122,7 +96,7 @@ app.get('/api/leases', async (req: AuthedRequest, res) => {
   res.json(result.rows);
 });
 
-app.post('/api/leases', async (req: AuthedRequest, res) => {
+app.post('/api/leases', requirePermission('lease.write'), async (req: AuthedRequest, res) => {
   const input=z.object({ unitId:z.string().uuid(), tenantId:z.string().uuid(), leaseNumber:z.string().min(2), startDate:z.string(), endDate:z.string(), monthlyRent:z.number().positive(), depositAmount:z.number().nonnegative().default(0), dueDay:z.number().int().min(1).max(28).default(5) }).safeParse(req.body);
   if(!input.success) return res.status(400).json({error:input.error.flatten()});
   const d=input.data;
@@ -141,7 +115,7 @@ app.get('/api/payments', async (req: AuthedRequest, res) => {
   res.json(result.rows);
 });
 
-app.post('/api/payments', async (req: AuthedRequest, res) => {
+app.post('/api/payments', requirePermission('finance.write'), async (req: AuthedRequest, res) => {
   const input=z.object({ tenantId:z.string().uuid().optional(), reference:z.string().min(2), paymentMethod:z.enum(['mpesa','bank','card','cash','cheque','wallet','adjustment']), amount:z.number().positive(), paidAt:z.string().optional() }).safeParse(req.body);
   if(!input.success) return res.status(400).json({error:input.error.flatten()});
   const d=input.data,result=await query(`INSERT INTO payments(organization_id,tenant_id,reference,payment_method,amount,paid_at,status) VALUES($1,$2,$3,$4,$5,coalesce($6::timestamptz,now()),'posted') RETURNING *`,[tenantId(req),d.tenantId||null,d.reference,d.paymentMethod,d.amount,d.paidAt||null]);
@@ -158,7 +132,7 @@ app.get('/api/maintenance', async (req: AuthedRequest, res) => {
   res.json(result.rows);
 });
 
-app.post('/api/maintenance', async (req: AuthedRequest, res) => {
+app.post('/api/maintenance', requirePermission('maintenance.write'), async (req: AuthedRequest, res) => {
   const input=z.object({ propertyId:z.string().uuid(), unitId:z.string().uuid().optional(), tenantId:z.string().uuid().optional(), requestNumber:z.string().min(2), title:z.string().min(3), description:z.string().optional(), category:z.string().optional(), priority:z.enum(['low','medium','high','urgent']).default('medium') }).safeParse(req.body);
   if(!input.success) return res.status(400).json({error:input.error.flatten()});
   const d=input.data,result=await query(`INSERT INTO maintenance_requests(organization_id,property_id,unit_id,tenant_id,request_number,title,description,category,priority) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,[tenantId(req),d.propertyId,d.unitId||null,d.tenantId||null,d.requestNumber,d.title,d.description||null,d.category||null,d.priority]);
