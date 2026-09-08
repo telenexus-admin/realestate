@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { ArrowRight, Building2, CheckCircle2, Eye, EyeOff, KeyRound, LockKeyhole, ShieldCheck, Sparkles } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Building2, CheckCircle2, Eye, EyeOff, KeyRound, LockKeyhole, ShieldCheck, Sparkles } from 'lucide-react';
 import App from './App';
-import { api, getToken } from './api';
+import { ApiError, api, getToken } from './api';
 
 export default function AuthShell(){
   const allowDemo=import.meta.env.VITE_ALLOW_DEMO_MODE!=='false';
@@ -9,6 +9,8 @@ export default function AuthShell(){
   const [email,setEmail]=useState('alex@alpha.test');
   const [workspace,setWorkspace]=useState('alpha-properties');
   const [password,setPassword]=useState('');
+  const [mfaRequired,setMfaRequired]=useState(false);
+  const [mfaCode,setMfaCode]=useState('');
   const [showPassword,setShowPassword]=useState(false);
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
@@ -26,10 +28,16 @@ export default function AuthShell(){
   async function login(e:FormEvent){
     e.preventDefault();
     setBusy(true);setError('');
-    try{await api.login(email,password,workspace);setMode('app');}
-    catch(err){setError(err instanceof Error?err.message:'Unable to sign in');}
-    finally{setBusy(false);}
+    try{
+      await api.login(email,password,workspace,mfaRequired?mfaCode:undefined);
+      setMode('app');
+    }catch(err){
+      if(err instanceof ApiError && err.status===428 && err.data?.mfaRequired){setMfaRequired(true);setMfaCode('');setError('');}
+      else setError(err instanceof Error?err.message:'Unable to sign in');
+    }finally{setBusy(false);}
   }
+
+  function resetMfa(){setMfaRequired(false);setMfaCode('');setError('')}
 
   if(mode==='checking')return <div className="auth-checking"><div className="auth-spinner"/><strong>Securing workspace…</strong><span>Restoring your PropOS session</span></div>;
   if(mode==='app')return <App/>;
@@ -43,14 +51,23 @@ export default function AuthShell(){
     </section>
 
     <section className="auth-login-side"><form className="auth-card" onSubmit={login}>
-      <div className="auth-card-head"><span>WELCOME BACK</span><h2>Sign in to PropOS</h2><p>Use your company workspace and account credentials.</p></div>
-      {error&&<div className="auth-error">{error}</div>}
-      <label><span>Work email</span><input type="email" autoComplete="email" value={email} onChange={e=>setEmail(e.target.value)} required/></label>
-      <label><span>Workspace</span><div className="auth-input-prefix"><Building2 size={15}/><input value={workspace} onChange={e=>setWorkspace(e.target.value)} required/></div><small>Your organization's PropOS workspace slug.</small></label>
-      <label><div className="auth-label-row"><span>Password</span><button type="button">Forgot password?</button></div><div className="auth-password"><LockKeyhole size={15}/><input type={showPassword?'text':'password'} autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} required minLength={8}/><button type="button" aria-label={showPassword?'Hide password':'Show password'} onClick={()=>setShowPassword(v=>!v)}>{showPassword?<EyeOff size={15}/>:<Eye size={15}/>}</button></div></label>
-      <button className="auth-submit" disabled={busy}>{busy?'Verifying…':<>Enter workspace <ArrowRight size={16}/></>}</button>
-      <div className="auth-trust"><CheckCircle2 size={14}/><span>Protected by session rotation, rate limiting and account lockout controls.</span></div>
-      {allowDemo&&<div className="auth-demo"><div><span>LOCAL DEMO</span><strong>Explore without an API session</strong><small>Demo UI only. Controlled backend actions remain disconnected.</small></div><button type="button" onClick={()=>setMode('app')}>Open demo workspace</button><code>Demo password: PropOS-Dev-2026!</code></div>}
+      {!mfaRequired?<>
+        <div className="auth-card-head"><span>WELCOME BACK</span><h2>Sign in to PropOS</h2><p>Use your company workspace and account credentials.</p></div>
+        {error&&<div className="auth-error">{error}</div>}
+        <label><span>Work email</span><input type="email" autoComplete="email" value={email} onChange={e=>setEmail(e.target.value)} required/></label>
+        <label><span>Workspace</span><div className="auth-input-prefix"><Building2 size={15}/><input value={workspace} onChange={e=>setWorkspace(e.target.value)} required/></div><small>Your organization's PropOS workspace slug.</small></label>
+        <label><div className="auth-label-row"><span>Password</span><button type="button">Forgot password?</button></div><div className="auth-password"><LockKeyhole size={15}/><input type={showPassword?'text':'password'} autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} required minLength={8}/><button type="button" aria-label={showPassword?'Hide password':'Show password'} onClick={()=>setShowPassword(v=>!v)}>{showPassword?<EyeOff size={15}/>:<Eye size={15}/>}</button></div></label>
+      </>:<>
+        <button type="button" className="auth-back" onClick={resetMfa}><ArrowLeft size={14}/> Back</button>
+        <div className="auth-mfa-icon"><ShieldCheck size={22}/></div>
+        <div className="auth-card-head auth-mfa-head"><span>SECOND FACTOR</span><h2>Verify it's you</h2><p>Enter the 6-digit code from your authenticator app, or use one of your recovery codes.</p></div>
+        {error&&<div className="auth-error">{error}</div>}
+        <label><span>Authentication code</span><div className="auth-input-prefix"><KeyRound size={15}/><input className="auth-mfa-input" autoFocus inputMode="numeric" autoComplete="one-time-code" value={mfaCode} onChange={e=>setMfaCode(e.target.value.toUpperCase())} placeholder="000000 or recovery code" required/></div><small>Authenticator codes refresh every 30 seconds. Recovery codes are single-use.</small></label>
+        <div className="auth-mfa-account"><span>Signing in as</span><strong>{email}</strong><small>{workspace}</small></div>
+      </>}
+      <button className="auth-submit" disabled={busy||mfaRequired&&!mfaCode.trim()}>{busy?'Verifying…':mfaRequired?<>Verify & enter <ShieldCheck size={16}/></>:<>Enter workspace <ArrowRight size={16}/></>}</button>
+      <div className="auth-trust"><CheckCircle2 size={14}/><span>{mfaRequired?'Your password was accepted. PropOS now requires your second factor before creating a session.':'Protected by session rotation, rate limiting, account lockout and optional MFA.'}</span></div>
+      {allowDemo&&!mfaRequired&&<div className="auth-demo"><div><span>LOCAL DEMO</span><strong>Explore without an API session</strong><small>Demo UI only. Controlled backend actions remain disconnected.</small></div><button type="button" onClick={()=>setMode('app')}>Open demo workspace</button><code>Demo password: PropOS-Dev-2026!</code></div>}
     </form>
     <div className="auth-legal">By continuing, you agree to your organization's security and acceptable-use policies.</div>
   </section>
