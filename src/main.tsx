@@ -17,6 +17,7 @@ import './interactions.css';
 import './interactions2.css';
 import './workflow-execution.css';
 import './auth.css';
+import './security.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
