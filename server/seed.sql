@@ -3,18 +3,21 @@ VALUES ('11111111-1111-1111-1111-111111111111','Alpha Properties','alpha-propert
 ON CONFLICT (slug) DO NOTHING;
 
 INSERT INTO users (id,email,password_hash,first_name,last_name,phone)
-VALUES ('22222222-2222-2222-2222-222222222222','alex@alpha.test','dev-only','Alex','N.','0712000000')
+VALUES ('22222222-2222-2222-2222-222222222222','alex@alpha.test','pbkdf2$210000$cG9seWl6b24tZGVtby0yMDI2$DTQ2xrV_no-o-Jz8ChY1RStCxDyYAzvoJUaYbMSu-2E','Alex','N.','0712000000')
 ON CONFLICT (email) DO NOTHING;
+
+INSERT INTO organization_users (organization_id,user_id,role)
+VALUES ('11111111-1111-1111-1111-111111111111','22222222-2222-2222-2222-222222222222','admin')
+ON CONFLICT DO NOTHING;
 
 INSERT INTO users (id,email,password_hash,first_name,last_name,phone)
 VALUES
-('22222222-2222-2222-2222-222222222223','grace@alpha.test','dev-only','Grace','Muthoni','0712000001'),
-('22222222-2222-2222-2222-222222222224','sarah@alpha.test','dev-only','Sarah','Njeri','0712000002')
+('22222222-2222-2222-2222-222222222223','grace@alpha.test','pbkdf2$210000$cG9seWl6b24tZGVtby0yMDI2$DTQ2xrV_no-o-Jz8ChY1RStCxDyYAzvoJUaYbMSu-2E','Grace','Muthoni','0712000001'),
+('22222222-2222-2222-2222-222222222224','sarah@alpha.test','pbkdf2$210000$cG9seWl6b24tZGVtby0yMDI2$DTQ2xrV_no-o-Jz8ChY1RStCxDyYAzvoJUaYbMSu-2E','Sarah','Njeri','0712000002')
 ON CONFLICT (email) DO NOTHING;
 
 INSERT INTO organization_users (organization_id,user_id,role)
 VALUES
-('11111111-1111-1111-1111-111111111111','22222222-2222-2222-2222-222222222222','admin'),
 ('11111111-1111-1111-1111-111111111111','22222222-2222-2222-2222-222222222223','accountant'),
 ('11111111-1111-1111-1111-111111111111','22222222-2222-2222-2222-222222222224','property_manager')
 ON CONFLICT DO NOTHING;
@@ -48,9 +51,9 @@ ON CONFLICT DO NOTHING;
 
 INSERT INTO workflow_actions (id,organization_id,action_type,title,description,amount,currency,risk_level,department,status,policy_state,policy_reasons,requested_by,assigned_to)
 VALUES
-('77777777-7777-7777-7777-777777777771','11111111-1111-1111-1111-111111111111','owner_payout','Wanjiru Holdings','September owner distribution · 3 properties',1840000,'KES','high','finance','assigned','review','["Second finance approver required above KES 500,000"]','22222222-2222-2222-2222-222222222223','22222222-2222-2222-2222-222222222222'),
-('77777777-7777-7777-7777-777777777772','11111111-1111-1111-1111-111111111111','vendor_invoice','Kamau Plumbing Ltd','WO-2183 · Greenview Apartments',84500,'KES','medium','operations','assigned','clear','[]','22222222-2222-2222-2222-222222222224','22222222-2222-2222-2222-222222222222'),
-('77777777-7777-7777-7777-777777777773','11111111-1111-1111-1111-111111111111','deposit_refund','Kevin Mwangi','Parkline C-18 · Move-out settlement',58000,'KES','medium','leasing','pending','clear','[]','22222222-2222-2222-2222-222222222224',NULL),
-('77777777-7777-7777-7777-777777777774','11111111-1111-1111-1111-111111111111','write_off','Njeri & Co.','Aged arrears · 146 days overdue',126400,'KES','high','collections','blocked','blocked','["Collections manager review required","Supporting write-off evidence missing"]','22222222-2222-2222-2222-222222222223',NULL),
-('77777777-7777-7777-7777-777777777775','11111111-1111-1111-1111-111111111111','renewal_offer','Mercy Wanjiku','Greenview A-12 · 5% proposed increase',33600,'KES','low','leasing','pending','clear','[]','22222222-2222-2222-2222-222222222224',NULL)
+('77777777-7777-7777-7777-777777777771','11111111-1111-1111-1111-111111111111','owner_payout','September distribution · Wanjiru Holdings','Owner payout for reconciled September collections',1840000,'KES','high','finance','assigned','review','["Dual approval required above KES 500K"]'::jsonb,'22222222-2222-2222-2222-222222222224','22222222-2222-2222-2222-222222222223'),
+('77777777-7777-7777-7777-777777777772','11111111-1111-1111-1111-111111111111','vendor_invoice','Kamau Plumbing Ltd · WO-2183','Vendor invoice awaiting controlled approval',84500,'KES','medium','operations','pending','clear','[]'::jsonb,'22222222-2222-2222-2222-222222222224',NULL),
+('77777777-7777-7777-7777-777777777773','11111111-1111-1111-1111-111111111111','deposit_refund','Kevin Mwangi · Parkline C-18','Move-out deposit refund after deductions',58000,'KES','medium','leasing','pending','clear','[]'::jsonb,'22222222-2222-2222-2222-222222222224',NULL),
+('77777777-7777-7777-7777-777777777774','11111111-1111-1111-1111-111111111111','write_off','Njeri & Co. aged arrears','Write-off request for 146-day aged debt',126400,'KES','high','collections','blocked','blocked','["Segregation-of-duties conflict","Director review required"]'::jsonb,'22222222-2222-2222-2222-222222222223','22222222-2222-2222-2222-222222222223'),
+('77777777-7777-7777-7777-777777777775','11111111-1111-1111-1111-111111111111','renewal_offer','Mercy Wanjiku · Greenview A-12','Renewal offer with proposed 5% rent increase',33600,'KES','low','leasing','pending','clear','[]'::jsonb,'22222222-2222-2222-2222-222222222224',NULL)
 ON CONFLICT (id) DO NOTHING;
