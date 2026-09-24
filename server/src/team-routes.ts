@@ -24,8 +24,12 @@ router.post('/team/caretakers',requirePermission('team.write'),async(req:AuthedR
     const caretaker=await withTransaction(async client=>{
       const properties=await client.query(`SELECT id FROM properties WHERE organization_id=$1 AND id=ANY($2::uuid[])`,[org(req),d.propertyIds]);
       if(properties.rowCount!==new Set(d.propertyIds).size)throw Object.assign(new Error('One or more assigned properties were not found'),{status:400});
-      const duplicate=await client.query(`SELECT 1 FROM users WHERE lower(email)=$1`,[d.email]);
-      if(duplicate.rowCount)throw Object.assign(new Error('That email address already has an account'),{status:409});
+      const duplicate=await client.query<{role:string|null}>(`SELECT ou.role FROM users u LEFT JOIN organization_users ou ON ou.user_id=u.id AND ou.organization_id=$1 WHERE lower(u.email)=$2 LIMIT 1`,[org(req),d.email]);
+      if(duplicate.rowCount){
+        const role=duplicate.rows[0].role?.replaceAll('_',' ');
+        const message=role?`This email already belongs to the ${role} account in this workspace. Use a different email for the caretaker.`:'This email already has a PropOS account. Use a different email for the caretaker.';
+        throw Object.assign(new Error(message),{status:409});
+      }
       const user=await client.query<{id:string}>(`INSERT INTO users(email,password_hash,first_name,last_name,phone) VALUES($1,$2,$3,$4,$5) RETURNING id`,[d.email,hashPassword(d.temporaryPassword),d.firstName,d.lastName,d.phone]);
       await client.query(`INSERT INTO organization_users(organization_id,user_id,role,property_scope) VALUES($1,$2,'caretaker',$3::uuid[])`,[org(req),user.rows[0].id,d.propertyIds]);
       await client.query(`INSERT INTO audit_logs(organization_id,user_id,action,entity_type,entity_id,metadata) VALUES($1,$2,'team.caretaker_created','user',$3,$4::jsonb)`,[org(req),req.auth!.userId,user.rows[0].id,JSON.stringify({email:d.email,propertyIds:d.propertyIds})]);
