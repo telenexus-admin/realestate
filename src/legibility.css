@@ -1,0 +1,48 @@
+/* Final typography layer: keep the compact layout while making the admin UI easy to read. */
+.app{
+  --muted:#5f6b7d;
+  color:#111827;
+  font-weight:450;
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+}
+.app.dark{--muted:#aab4c5;color:#f4f7fb}
+.app :where(button,input,select,textarea){font-family:inherit}
+.app .sidebar{padding-top:20px}
+.app .brand-row{margin-bottom:22px}
+.app .brand-row strong{font-size:16px;font-weight:800;letter-spacing:-.02em}
+.app .brand-row span{font-size:10px;font-weight:700;letter-spacing:.08em;color:var(--muted)}
+.app .nav-item{font-size:12px;font-weight:700;line-height:1.25;padding:11px 11px}
+.app .nav-item svg{opacity:.88}
+.app .nav-item em{font-size:9px;font-weight:800}
+.app .global-search input{font-size:12px;font-weight:500;color:var(--text)}
+.app .global-search input::placeholder{color:#687386;opacity:1}
+.app .global-search kbd{font-size:9px;color:#596579}
+.app .profile strong{font-size:11px;font-weight:800}
+.app .profile span{font-size:9px;font-weight:600;color:var(--muted)}
+.app .context-bar,.app .context-bar button,.app .context-bar strong{font-size:10px;font-weight:650}
+.app .hero-head h1,.app .module-header h1{font-size:29px;font-weight:800;letter-spacing:-.04em;color:var(--text)}
+.app .hero-head p,.app .module-header p{font-size:12px;line-height:1.55;color:var(--muted)}
+.app .eyebrow,.app .panel-kicker{font-size:9px;font-weight:850;letter-spacing:.11em}
+.app .period,.app .primary-button,.app .secondary-button,.app .ghost-button,.app .add-button{font-size:10px;font-weight:750}
+.app .metric-copy>span{font-size:10px;font-weight:800;color:#657084}
+.app .metric-copy>strong{font-size:24px;font-weight:800;letter-spacing:-.035em;color:var(--text)}
+.app .metric-copy>small{font-size:9px;font-weight:550;line-height:1.45;color:var(--muted)}
+.app .panel h2{font-size:15px;font-weight:800;letter-spacing:-.015em;color:var(--text)}
+.app .chart-summary strong{font-size:24px;font-weight:800}
+.app .chart-summary span,.app .chart-labels span,.app .legend span{font-size:9px;font-weight:550;color:var(--muted)}
+.app .legend strong{font-size:10px;font-weight:800}
+.app .attention-row strong,.app .payment-row strong{font-size:10px;font-weight:750;color:var(--text)}
+.app .attention-row span,.app .payment-row span{font-size:9px;font-weight:550;color:var(--muted)}
+.app .module-header p,.app .panel p,.app .overview-source-note{color:var(--muted)}
+.app table th{font-size:9px;font-weight:850;color:#5c687b}
+.app table td{font-size:10px;font-weight:550;color:var(--text)}
+.app .status-pill{font-size:8px;font-weight:800}
+.app .form-grid label>span,.app .modal label>span{font-size:10px;font-weight:750;color:var(--text)}
+.app :where(input,select,textarea){font-size:11px;color:var(--text)}
+.app small{color:var(--muted)}
+@media(max-width:720px){
+  .app .hero-head h1,.app .module-header h1{font-size:25px}
+  .app .nav-item{font-size:13px;padding:12px}
+  .app .metric-copy>strong{font-size:22px}
+}
