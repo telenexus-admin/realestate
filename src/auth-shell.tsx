@@ -2,12 +2,14 @@ import { FormEvent, useEffect, useState } from 'react';
 import { ArrowLeft, ArrowRight, Building2, CheckCircle2, Eye, EyeOff, KeyRound, LockKeyhole, ShieldCheck, Sparkles } from 'lucide-react';
 import App from './App';
 import OperatorDashboard from './pages/operator-dashboard';
-import { ApiError, api, getToken } from './api';
+import TenantPortal from './tenant-portal';
+import { ApiError, api, getToken, type Session } from './api';
 
 export default function AuthShell(){
   const operatorMode=window.location.pathname.startsWith('/operator');
   const allowDemo=import.meta.env.VITE_ALLOW_DEMO_MODE!=='false';
   const [mode,setMode]=useState<'checking'|'login'|'app'>('checking');
+  const [session,setSession]=useState<Session|null>(null);
   const [email,setEmail]=useState(operatorMode?'admin@polyizon.tech':'');
   const [workspace,setWorkspace]=useState(operatorMode?'polyizon-propos':'');
   const [password,setPassword]=useState('');
@@ -22,7 +24,7 @@ export default function AuthShell(){
     (async()=>{
       if(!getToken()){if(active)setMode('login');return;}
       const refreshed=await api.refreshSession();
-      if(active)setMode(refreshed?'app':'login');
+      if(active){setSession(refreshed);setMode(refreshed?'app':'login');}
     })();
     return()=>{active=false};
   },[]);
@@ -31,7 +33,8 @@ export default function AuthShell(){
     e.preventDefault();
     setBusy(true);setError('');
     try{
-      await api.login(email,password,workspace,mfaRequired?mfaCode:undefined);
+      const nextSession=await api.login(email,password,workspace,mfaRequired?mfaCode:undefined);
+      setSession(nextSession);
       setMode('app');
     }catch(err){
       if(err instanceof ApiError && err.status===428 && err.data?.mfaRequired){setMfaRequired(true);setMfaCode('');setError('');}
@@ -42,7 +45,7 @@ export default function AuthShell(){
   function resetMfa(){setMfaRequired(false);setMfaCode('');setError('')}
 
   if(mode==='checking')return <div className="auth-checking"><div className="auth-spinner"/><strong>Securing workspace…</strong><span>Restoring your PropOS session</span></div>;
-  if(mode==='app')return operatorMode?<OperatorDashboard/>:<App/>;
+  if(mode==='app')return operatorMode?<OperatorDashboard/>:session?.user.role==='tenant'?<TenantPortal session={session} onLogout={()=>{setSession(null);setMode('login')}}/>:<App/>;
 
   return <main className="auth-shell">
     <section className="auth-story">

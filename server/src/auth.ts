@@ -133,6 +133,7 @@ const permissionMatrix:Record<string,Set<string>>={
   caretaker:new Set(['portfolio.read','maintenance.write','water.write']),
   maintenance:new Set(['portfolio.read','maintenance.write']),
   auditor:new Set(['portfolio.read','finance.read','reports.read','audit.read']),
+  tenant:new Set(['portal.read','portal.ticket.write']),
 };
 
 export function hasPermission(role:string,permission:string){const set=permissionMatrix[role];return !!set&&(set.has('*')||set.has(permission));}

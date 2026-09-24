@@ -28,6 +28,7 @@ export type TenantLifecycle={tenant:any;contacts:any[];kyc:any[];leases:any[];wa
 export type OperatorSummary={organizations:number;active:number;trial:number;suspended:number;users:number;units:number};
 export type OperatorOrganization={id:string;name:string;slug:string;status:'trial'|'active'|'suspended'|'closed';plan:string;email?:string|null;phone?:string|null;currency:string;timezone:string;created_at:string;unit_limit:number;trial_ends_at?:string|null;user_count:number;unit_count:number};
 export type OrganizationOnboarding={companyName:string;slug:string;companyEmail?:string;companyPhone?:string;plan:'starter'|'growth'|'professional';unitLimit:number;status:'trial'|'active';adminFirstName:string;adminLastName:string;adminEmail:string;adminPhone?:string;temporaryPassword:string};
+export type TenantPortalData={tenant:any;balance:number;payments:any[];invoices:any[];documents:any[];tickets:any[]};
 
 export class ApiError extends Error{
   status:number;
@@ -92,6 +93,14 @@ async function request<T>(path: string, init: RequestInit = {}, allowRefresh=tru
     throw new ApiError(message,response.status,data);
   }
   return data as T;
+}
+
+async function download(path:string,fileName:string,allowRefresh=true){
+  const token=getToken(),headers=new Headers();if(token)headers.set('Authorization',`Bearer ${token}`);
+  const response=await fetch(`${API_URL}${path}`,{headers,credentials:'include'});
+  if(response.status===401&&allowRefresh&&await refreshSession())return download(path,fileName,false);
+  if(!response.ok){const data=await response.json().catch(()=>({}));throw new ApiError(data?.error||'Could not download document',response.status,data)}
+  const url=URL.createObjectURL(await response.blob()),link=document.createElement('a');link.href=url;link.download=fileName;link.click();window.setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 
 function idempotencyKey(prefix:string){
@@ -170,6 +179,11 @@ export const api = {
   shareInvoice:(id:string,channel:'whatsapp'|'sms'|'email')=>request<{actionUrl:string;message:string;status:string}>(`/api/rental/invoices/${id}/share`,{method:'POST',body:JSON.stringify({channel})}),
   team:()=>request<any[]>('/api/team'),
   createCaretaker:(payload:{firstName:string;lastName:string;email:string;phone:string;temporaryPassword:string;propertyIds:string[]})=>request('/api/team/caretakers',{method:'POST',body:JSON.stringify(payload)}),
+  createTenantPortal:(payload:{tenantId:string;email:string;temporaryPassword:string})=>request('/api/team/tenant-portal',{method:'POST',body:JSON.stringify(payload)}),
+  uploadTenantDocument:(tenantId:string,payload:{fileName:string;mimeType:string;contentBase64:string})=>request(`/api/team/tenant/${tenantId}/documents`,{method:'POST',body:JSON.stringify(payload)}),
+  tenantPortal:()=>request<TenantPortalData>('/api/portal'),
+  createTenantTicket:(payload:{category:string;priority:string;subject:string;description:string})=>request('/api/portal/tickets',{method:'POST',body:JSON.stringify(payload)}),
+  downloadTenantDocument:(id:string,fileName:string)=>download(`/api/portal/documents/${id}`,fileName),
   tenantLifecycle:(tenantId:string)=>request<TenantLifecycle>(`/api/rental/tenant/${tenantId}/lifecycle`),
   tenantContacts:(tenantId:string)=>request<any[]>(`/api/rental/tenant/${tenantId}/contacts`),
   createTenantContact:(tenantId:string,payload:unknown)=>request(`/api/rental/tenant/${tenantId}/contacts`,{method:'POST',body:JSON.stringify(payload)}),

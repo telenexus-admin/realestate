@@ -9,13 +9,14 @@ import rentalRouter from './rental-routes.js';
 import operatorRouter from './operator-routes.js';
 import teamRouter from './team-routes.js';
 import communityRouter from './community-routes.js';
+import portalRouter from './portal-routes.js';
 import authRouter, { auth, requirePermission, type AuthedRequest } from './auth.js';
 
 const app = express();
 app.set('trust proxy', 1);
 app.use(helmet());
 app.use(cors({ origin: process.env.CORS_ORIGIN?.split(',') || true, credentials: true }));
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '8mb' }));
 
 const PORT = Number(process.env.PORT || 4000);
 
@@ -33,6 +34,8 @@ app.get('/health', async (_req, res) => {
 
 app.use('/api/auth', authRouter);
 app.use('/api', auth);
+app.use('/api', portalRouter);
+app.use('/api',(req:AuthedRequest,res,next)=>req.auth?.role==='tenant'?res.status(403).json({error:'This area is for property management accounts'}):next());
 app.use('/api', operatorRouter);
 app.use('/api', teamRouter);
 app.use('/api', communityRouter);
@@ -95,6 +98,7 @@ app.post('/api/units', requirePermission('property.write'), async (req: AuthedRe
 app.get('/api/tenants', async (req: AuthedRequest, res) => {
   const scope=propertyScope(req);
   const result=await query(`SELECT rt.*,l.lease_number,l.monthly_rent,l.end_date,u.unit_number,p.name property_name,
+    EXISTS(SELECT 1 FROM tenant_portal_accounts tpa WHERE tpa.organization_id=rt.organization_id AND tpa.tenant_id=rt.id) portal_active,
     coalesce(sum(i.total-i.paid_amount) FILTER (WHERE i.status IN ('issued','partial','overdue')),0) balance
     FROM rental_tenants rt LEFT JOIN leases l ON l.tenant_id=rt.id AND l.status IN ('active','expiring')
     LEFT JOIN units u ON u.id=l.unit_id LEFT JOIN properties p ON p.id=u.property_id LEFT JOIN invoices i ON i.tenant_id=rt.id
