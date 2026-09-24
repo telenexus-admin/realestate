@@ -45,17 +45,17 @@ export default function AuthShell(){
   return <main className="auth-shell">
     <section className="auth-story">
       <div className="auth-brand"><div className="auth-brand-mark"><Building2 size={20}/></div><div><strong>Polyizon</strong><span>PropOS</span></div></div>
-      <div className="auth-story-copy"><span className="auth-kicker"><Sparkles size={13}/> PROPERTY OPERATING SYSTEM</span><h1>Run the portfolio.<br/>Control the money.<br/>Protect every decision.</h1><p>One operating layer for property operations, collections, accounting, leasing, maintenance and governance.</p></div>
-      <div className="auth-security-grid"><div><ShieldCheck size={17}/><p><strong>Organization isolation</strong><span>Every session is bound to one workspace and validated on every API request.</span></p></div><div><KeyRound size={17}/><p><strong>Rotating sessions</strong><span>Short-lived access tokens with revocable, rotating refresh sessions.</span></p></div><div><LockKeyhole size={17}/><p><strong>Controlled actions</strong><span>Role permissions, segregation of duties and audit-backed approvals.</span></p></div></div>
-      <div className="auth-story-foot"><span><i/> Security controls active</span><span>Africa/Nairobi</span></div>
+      <div className="auth-story-copy"><span className="auth-kicker"><Sparkles size={13}/> PROPERTY MANAGER</span><h1>Properties, tenants<br/>and rent.<br/>All in one place.</h1><p>A simple way to manage your properties every day.</p></div>
+      <div className="auth-security-grid"><div><Building2 size={17}/><p><strong>Properties and units</strong><span>See occupied and vacant units quickly.</span></p></div><div><KeyRound size={17}/><p><strong>Tenants and leases</strong><span>Keep tenant details together.</span></p></div><div><ShieldCheck size={17}/><p><strong>Rent and repairs</strong><span>Track payments and repair requests.</span></p></div></div>
+      <div className="auth-story-foot"><span><i/> Secure sign in</span><span>Nairobi</span></div>
     </section>
 
     <section className="auth-login-side"><form className="auth-card" onSubmit={login}>
       {!mfaRequired?<>
-        <div className="auth-card-head"><span>WELCOME BACK</span><h2>Sign in to PropOS</h2><p>Use your company workspace and account credentials.</p></div>
+        <div className="auth-card-head"><span>SIGN IN</span><h2>Welcome back</h2><p>Enter your company email and password.</p></div>
         {error&&<div className="auth-error">{error}</div>}
         <label><span>Work email</span><input type="email" autoComplete="email" value={email} onChange={e=>setEmail(e.target.value)} required/></label>
-        <label><span>Workspace</span><div className="auth-input-prefix"><Building2 size={15}/><input value={workspace} onChange={e=>setWorkspace(e.target.value)} required/></div><small>Your organization's PropOS workspace slug.</small></label>
+        <label><span>Company code</span><div className="auth-input-prefix"><Building2 size={15}/><input value={workspace} onChange={e=>setWorkspace(e.target.value)} required/></div><small>Your company's sign-in code.</small></label>
         <label><div className="auth-label-row"><span>Password</span><button type="button">Forgot password?</button></div><div className="auth-password"><LockKeyhole size={15}/><input type={showPassword?'text':'password'} autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} required minLength={8}/><button type="button" aria-label={showPassword?'Hide password':'Show password'} onClick={()=>setShowPassword(v=>!v)}>{showPassword?<EyeOff size={15}/>:<Eye size={15}/>}</button></div></label>
       </>:<>
         <button type="button" className="auth-back" onClick={resetMfa}><ArrowLeft size={14}/> Back</button>
@@ -66,10 +66,10 @@ export default function AuthShell(){
         <div className="auth-mfa-account"><span>Signing in as</span><strong>{email}</strong><small>{workspace}</small></div>
       </>}
       <button className="auth-submit" disabled={busy||mfaRequired&&!mfaCode.trim()}>{busy?'Verifying…':mfaRequired?<>Verify & enter <ShieldCheck size={16}/></>:<>Enter workspace <ArrowRight size={16}/></>}</button>
-      <div className="auth-trust"><CheckCircle2 size={14}/><span>{mfaRequired?'Your password was accepted. PropOS now requires your second factor before creating a session.':'Protected by session rotation, rate limiting, account lockout and optional MFA.'}</span></div>
+      <div className="auth-trust"><CheckCircle2 size={14}/><span>{mfaRequired?'Password accepted. Enter your security code to continue.':'Your account is protected.'}</span></div>
       {allowDemo&&!mfaRequired&&<div className="auth-demo"><div><span>LOCAL DEMO</span><strong>Explore without an API session</strong><small>Demo UI only. Controlled backend actions remain disconnected.</small></div><button type="button" onClick={()=>setMode('app')}>Open demo workspace</button><code>Demo password: PropOS-Dev-2026!</code></div>}
     </form>
-    <div className="auth-legal">By continuing, you agree to your organization's security and acceptable-use policies.</div>
+    <div className="auth-legal">Secure access for authorized users.</div>
   </section>
  </main>;
 }
