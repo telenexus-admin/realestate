@@ -20,6 +20,9 @@ export type MfaStatus={enabled:boolean;setupPending:boolean;recoveryCodesRemaini
 export type MfaSetup={secret:string;otpauthUri:string};
 export type BillingPreview={periodStart:string;periodEnd:string;count:number;total:number;items:any[]};
 export type TenantLifecycle={tenant:any;contacts:any[];kyc:any[];leases:any[];wallet:{balance:number;entries:any[]};paymentPlans:any[];maintenance:any[];documents:any[]};
+export type OperatorSummary={organizations:number;active:number;trial:number;suspended:number;users:number;units:number};
+export type OperatorOrganization={id:string;name:string;slug:string;status:'trial'|'active'|'suspended'|'closed';plan:string;email?:string|null;phone?:string|null;currency:string;timezone:string;created_at:string;unit_limit:number;trial_ends_at?:string|null;user_count:number;unit_count:number};
+export type OrganizationOnboarding={companyName:string;slug:string;companyEmail?:string;companyPhone?:string;plan:'starter'|'growth'|'professional';unitLimit:number;status:'trial'|'active';adminFirstName:string;adminLastName:string;adminEmail:string;adminPhone?:string;temporaryPassword:string};
 
 export class ApiError extends Error{
   status:number;
@@ -128,6 +131,10 @@ export const api = {
   maintenance: () => request<any[]>('/api/maintenance'),
   createMaintenance: (payload: unknown) => request('/api/maintenance', { method: 'POST', body: JSON.stringify(payload) }),
   rentRoll: () => request<any[]>('/api/reports/rent-roll'),
+  operatorSummary:()=>request<OperatorSummary>('/api/operator/summary'),
+  operatorOrganizations:()=>request<OperatorOrganization[]>('/api/operator/organizations'),
+  onboardOrganization:(payload:OrganizationOnboarding)=>request<OperatorOrganization>('/api/operator/organizations',{method:'POST',body:JSON.stringify(payload)}),
+  updateOrganizationStatus:(id:string,status:'trial'|'active'|'suspended')=>request<OperatorOrganization>(`/api/operator/organizations/${id}/status`,{method:'PATCH',body:JSON.stringify({status})}),
   rentSchedules:()=>request<any[]>('/api/rental/rent-schedules'),
   createRentSchedule:(payload:unknown)=>request('/api/rental/rent-schedules',{method:'POST',body:JSON.stringify(payload)}),
   billingPreview:(periodStart:string,periodEnd:string,propertyId?:string)=>request<BillingPreview>('/api/rental/billing/preview',{method:'POST',body:JSON.stringify({periodStart,periodEnd,propertyId})}),

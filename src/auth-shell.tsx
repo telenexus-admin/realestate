@@ -1,13 +1,15 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { ArrowLeft, ArrowRight, Building2, CheckCircle2, Eye, EyeOff, KeyRound, LockKeyhole, ShieldCheck, Sparkles } from 'lucide-react';
 import App from './App';
+import OperatorDashboard from './pages/operator-dashboard';
 import { ApiError, api, getToken } from './api';
 
 export default function AuthShell(){
+  const operatorMode=window.location.pathname.startsWith('/operator');
   const allowDemo=import.meta.env.VITE_ALLOW_DEMO_MODE!=='false';
   const [mode,setMode]=useState<'checking'|'login'|'app'>('checking');
-  const [email,setEmail]=useState('alex@alpha.test');
-  const [workspace,setWorkspace]=useState('alpha-properties');
+  const [email,setEmail]=useState(operatorMode?'admin@polyizon.tech':'');
+  const [workspace,setWorkspace]=useState(operatorMode?'polyizon-propos':'');
   const [password,setPassword]=useState('');
   const [mfaRequired,setMfaRequired]=useState(false);
   const [mfaCode,setMfaCode]=useState('');
@@ -40,19 +42,19 @@ export default function AuthShell(){
   function resetMfa(){setMfaRequired(false);setMfaCode('');setError('')}
 
   if(mode==='checking')return <div className="auth-checking"><div className="auth-spinner"/><strong>Securing workspace…</strong><span>Restoring your PropOS session</span></div>;
-  if(mode==='app')return <App/>;
+  if(mode==='app')return operatorMode?<OperatorDashboard/>:<App/>;
 
   return <main className="auth-shell">
     <section className="auth-story">
       <div className="auth-brand"><div className="auth-brand-mark"><Building2 size={20}/></div><div><strong>Polyizon</strong><span>PropOS</span></div></div>
-      <div className="auth-story-copy"><span className="auth-kicker"><Sparkles size={13}/> PROPERTY MANAGER</span><h1>Properties, tenants<br/>and rent.<br/>All in one place.</h1><p>A simple way to manage your properties every day.</p></div>
+      <div className="auth-story-copy"><span className="auth-kicker"><Sparkles size={13}/> {operatorMode?'PLATFORM OPERATOR':'PROPERTY MANAGER'}</span><h1>{operatorMode?<>Set up companies.<br/>Keep access<br/>under control.</>:<>Properties, tenants<br/>and rent.<br/>All in one place.</>}</h1><p>{operatorMode?'A separate, protected area for onboarding PropOS accounts.':'A simple way to manage your properties every day.'}</p></div>
       <div className="auth-security-grid"><div><Building2 size={17}/><p><strong>Properties and units</strong><span>See occupied and vacant units quickly.</span></p></div><div><KeyRound size={17}/><p><strong>Tenants and leases</strong><span>Keep tenant details together.</span></p></div><div><ShieldCheck size={17}/><p><strong>Rent and repairs</strong><span>Track payments and repair requests.</span></p></div></div>
       <div className="auth-story-foot"><span><i/> Secure sign in</span><span>Nairobi</span></div>
     </section>
 
     <section className="auth-login-side"><form className="auth-card" onSubmit={login}>
       {!mfaRequired?<>
-        <div className="auth-card-head"><span>SIGN IN</span><h2>Welcome back</h2><p>Enter your company email and password.</p></div>
+        <div className="auth-card-head"><span>{operatorMode?'OPERATOR SIGN IN':'SIGN IN'}</span><h2>Welcome back</h2><p>{operatorMode?'Enter your authorized operator account.':'Enter your company email and password.'}</p></div>
         {error&&<div className="auth-error">{error}</div>}
         <label><span>Work email</span><input type="email" autoComplete="email" value={email} onChange={e=>setEmail(e.target.value)} required/></label>
         <label><span>Company code</span><div className="auth-input-prefix"><Building2 size={15}/><input value={workspace} onChange={e=>setWorkspace(e.target.value)} required/></div><small>Your company's sign-in code.</small></label>
