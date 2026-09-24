@@ -7,6 +7,7 @@ import { query, withTransaction } from './db.js';
 import workflowRouter from './workflow-routes.js';
 import rentalRouter from './rental-routes.js';
 import operatorRouter from './operator-routes.js';
+import teamRouter from './team-routes.js';
 import authRouter, { auth, requirePermission, type AuthedRequest } from './auth.js';
 
 const app = express();
@@ -32,6 +33,7 @@ app.get('/health', async (_req, res) => {
 app.use('/api/auth', authRouter);
 app.use('/api', auth);
 app.use('/api', operatorRouter);
+app.use('/api', teamRouter);
 app.use('/api', workflowRouter);
 app.use('/api', rentalRouter);
 

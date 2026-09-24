@@ -8,6 +8,7 @@ function org(req:AuthedRequest){if(!req.auth?.organizationId)throw new Error('Or
 function scope(req:AuthedRequest){return req.auth?.propertyScope||[];}
 function inScope(req:AuthedRequest,propertyId:string){const s=scope(req);return s.length===0||s.includes(propertyId);}
 function monthKey(date:string){return date.slice(0,7).replace('-','');}
+const billingMonth=z.string().regex(/^\d{4}-\d{2}-01$/,'Use the first day of the billing month');
 async function tenantAccess(req:AuthedRequest,tenantParam:string|string[]){
  const tenantId=Array.isArray(tenantParam)?tenantParam[0]:tenantParam;
  const result=await query<{id:string;property_id:string|null}>(`SELECT rt.id,(SELECT u.property_id FROM leases l JOIN units u ON u.id=l.unit_id WHERE l.organization_id=rt.organization_id AND l.tenant_id=rt.id AND l.status IN ('active','expiring') ORDER BY l.end_date DESC LIMIT 1) property_id FROM rental_tenants rt WHERE rt.id=$1 AND rt.organization_id=$2`,[tenantId,org(req)]);
@@ -30,30 +31,114 @@ router.post('/rental/rent-schedules',requirePermission('lease.write'),async(req:
  res.status(201).json(result.rows[0]);
 });
 
+router.get('/rental/billing/context',async(req:AuthedRequest,res)=>{
+ const [organization,user,properties]=await Promise.all([
+  query<{name:string;slug:string}>(`SELECT name,slug FROM organizations WHERE id=$1`,[org(req)]),
+  query<{first_name:string;last_name:string;email:string}>(`SELECT first_name,last_name,email FROM users WHERE id=$1`,[req.auth!.userId]),
+  query(`SELECT id,name FROM properties WHERE organization_id=$1 AND status='active' AND (cardinality($2::uuid[])=0 OR id=ANY($2::uuid[])) ORDER BY name`,[org(req),scope(req)])
+ ]);
+ res.json({role:req.auth!.role,organization:organization.rows[0],user:user.rows[0],properties:properties.rows,canManageBilling:['owner','admin','accountant','property_manager'].includes(req.auth!.role),canManageTeam:['owner','admin'].includes(req.auth!.role)});
+});
+
+router.get('/rental/water-settings',async(req:AuthedRequest,res)=>{
+ const result=await query(`SELECT p.id property_id,p.name property_name,coalesce(ws.billing_method,'meter') billing_method,coalesce(ws.rate_per_unit,0) rate_per_unit,coalesce(ws.flat_amount,0) flat_amount,coalesce(ws.shared_amount,0) shared_amount,coalesce(ws.active,true) active
+  FROM properties p LEFT JOIN property_water_settings ws ON ws.property_id=p.id WHERE p.organization_id=$1 AND p.status='active' AND (cardinality($2::uuid[])=0 OR p.id=ANY($2::uuid[])) ORDER BY p.name`,[org(req),scope(req)]);
+ res.json(result.rows);
+});
+
+router.put('/rental/water-settings/:propertyId',requirePermission('property.write'),async(req:AuthedRequest,res)=>{
+ const propertyId=z.string().uuid().safeParse(req.params.propertyId);
+ const input=z.object({billingMethod:z.enum(['meter','flat','shared']),ratePerUnit:z.number().nonnegative().default(0),flatAmount:z.number().nonnegative().default(0),sharedAmount:z.number().nonnegative().default(0),active:z.boolean().default(true)}).safeParse(req.body);
+ if(!propertyId.success||!input.success)return res.status(400).json({error:'Please enter valid water billing settings'});
+ if(!inScope(req,propertyId.data))return res.status(403).json({error:'Property is outside your assigned scope'});
+ const property=await query(`SELECT 1 FROM properties WHERE id=$1 AND organization_id=$2`,[propertyId.data,org(req)]);if(!property.rowCount)return res.status(404).json({error:'Property not found'});
+ const d=input.data,result=await query(`INSERT INTO property_water_settings(property_id,organization_id,billing_method,rate_per_unit,flat_amount,shared_amount,active,updated_by)
+  VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(property_id) DO UPDATE SET billing_method=excluded.billing_method,rate_per_unit=excluded.rate_per_unit,flat_amount=excluded.flat_amount,shared_amount=excluded.shared_amount,active=excluded.active,updated_by=excluded.updated_by,updated_at=now() RETURNING *`,[propertyId.data,org(req),d.billingMethod,d.ratePerUnit,d.flatAmount,d.sharedAmount,d.active,req.auth!.userId]);
+ res.json(result.rows[0]);
+});
+
+router.get('/rental/water-readings',requirePermission('portfolio.read'),async(req:AuthedRequest,res)=>{
+ const parsed=z.object({month:billingMonth,propertyId:z.string().uuid().optional()}).safeParse(req.query);if(!parsed.success)return res.status(400).json({error:'Choose a valid billing month'});
+ if(parsed.data.propertyId&&!inScope(req,parsed.data.propertyId))return res.status(403).json({error:'Property is outside your assigned scope'});
+ const propertyFilter=parsed.data.propertyId?[parsed.data.propertyId]:scope(req);
+ const result=await query(`SELECT u.id unit_id,u.unit_number,p.id property_id,p.name property_name,coalesce(ws.billing_method,'meter') billing_method,coalesce(ws.rate_per_unit,0) rate_per_unit,
+  wr.id,wr.billing_month,wr.previous_reading,wr.current_reading,wr.consumption,wr.amount,wr.notes,wr.status,wr.rejection_reason,
+  coalesce(wr.previous_reading,(SELECT prior.current_reading FROM water_readings prior WHERE prior.organization_id=$1 AND prior.unit_id=u.id AND prior.billing_month<$2::date AND prior.status='approved' ORDER BY prior.billing_month DESC LIMIT 1),0) suggested_previous
+  FROM units u JOIN properties p ON p.id=u.property_id LEFT JOIN property_water_settings ws ON ws.property_id=p.id AND ws.active=true LEFT JOIN water_readings wr ON wr.organization_id=$1 AND wr.unit_id=u.id AND wr.billing_month=$2::date
+  WHERE u.organization_id=$1 AND u.status<>'inactive' AND (cardinality($3::uuid[])=0 OR p.id=ANY($3::uuid[])) ORDER BY p.name,u.unit_number`,[org(req),parsed.data.month,propertyFilter]);
+ res.json(result.rows);
+});
+
+router.post('/rental/water-readings',requirePermission('water.write'),async(req:AuthedRequest,res)=>{
+ const input=z.object({month:billingMonth,readings:z.array(z.object({unitId:z.string().uuid(),currentReading:z.number().nonnegative(),notes:z.string().trim().max(500).optional()})).min(1).max(500)}).safeParse(req.body);
+ if(!input.success)return res.status(400).json({error:'Enter at least one valid meter reading',fields:input.error.flatten().fieldErrors});
+ const saved=await withTransaction(async client=>{
+  const rows=[];
+  for(const item of input.data.readings){
+   const unit=await client.query<{property_id:string;rate_per_unit:string;previous:string;existing_status:string|null}>(`SELECT u.property_id,coalesce(ws.rate_per_unit,0)::text rate_per_unit,
+    coalesce((SELECT wr.current_reading::text FROM water_readings wr WHERE wr.organization_id=u.organization_id AND wr.unit_id=u.id AND wr.billing_month<$3::date AND wr.status='approved' ORDER BY wr.billing_month DESC LIMIT 1),'0') previous,
+    (SELECT wr.status FROM water_readings wr WHERE wr.organization_id=u.organization_id AND wr.unit_id=u.id AND wr.billing_month=$3::date) existing_status
+    FROM units u JOIN property_water_settings ws ON ws.property_id=u.property_id AND ws.organization_id=u.organization_id AND ws.active=true AND ws.billing_method='meter'
+    WHERE u.id=$1 AND u.organization_id=$2 FOR UPDATE OF u`,[item.unitId,org(req),input.data.month]);
+   if(!unit.rowCount)throw Object.assign(new Error('A unit is missing active meter billing settings'),{status:400});
+   const row=unit.rows[0];if(!inScope(req,row.property_id))throw Object.assign(new Error('A unit is outside your assigned property scope'),{status:403});
+   if(row.existing_status==='approved')throw Object.assign(new Error('An approved reading cannot be changed'),{status:409});
+   const previous=Number(row.previous),consumption=item.currentReading-previous;if(consumption<0)throw Object.assign(new Error('Current reading cannot be below the previous approved reading'),{status:400});
+   const amount=Math.round(consumption*Number(row.rate_per_unit)*100)/100;
+   const reading=await client.query(`INSERT INTO water_readings(organization_id,property_id,unit_id,billing_month,previous_reading,current_reading,consumption,amount,notes,status,submitted_by,submitted_at)
+    VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'submitted',$10,now()) ON CONFLICT(organization_id,unit_id,billing_month) DO UPDATE SET previous_reading=excluded.previous_reading,current_reading=excluded.current_reading,consumption=excluded.consumption,amount=excluded.amount,notes=excluded.notes,status='submitted',submitted_by=excluded.submitted_by,submitted_at=now(),approved_by=null,approved_at=null,rejection_reason=null,updated_at=now() RETURNING *`,[org(req),row.property_id,item.unitId,input.data.month,previous,item.currentReading,consumption,amount,item.notes||null,req.auth!.userId]);
+   rows.push(reading.rows[0]);
+  }
+  return rows;
+ });
+ res.status(201).json(saved);
+});
+
+router.post('/rental/water-readings/:id/approve',requirePermission('finance.write'),async(req:AuthedRequest,res)=>{
+ const id=z.string().uuid().safeParse(req.params.id);if(!id.success)return res.status(400).json({error:'Invalid reading'});
+ const reading=await query<{property_id:string}>(`SELECT property_id FROM water_readings WHERE id=$1 AND organization_id=$2`,[id.data,org(req)]);if(!reading.rowCount)return res.status(404).json({error:'Reading not found'});if(!inScope(req,reading.rows[0].property_id))return res.status(403).json({error:'Reading is outside your assigned scope'});
+ const result=await query(`UPDATE water_readings SET status='approved',approved_by=$1,approved_at=now(),rejection_reason=null,updated_at=now() WHERE id=$2 AND organization_id=$3 AND status='submitted' RETURNING *`,[req.auth!.userId,id.data,org(req)]);if(!result.rowCount)return res.status(409).json({error:'Only submitted readings can be approved'});res.json(result.rows[0]);
+});
+
+router.post('/rental/water-readings/:id/reject',requirePermission('finance.write'),async(req:AuthedRequest,res)=>{
+ const parsed=z.object({reason:z.string().trim().min(2).max(300)}).safeParse(req.body),id=z.string().uuid().safeParse(req.params.id);if(!parsed.success||!id.success)return res.status(400).json({error:'Add a short rejection reason'});
+ const reading=await query<{property_id:string}>(`SELECT property_id FROM water_readings WHERE id=$1 AND organization_id=$2`,[id.data,org(req)]);if(!reading.rowCount)return res.status(404).json({error:'Reading not found'});if(!inScope(req,reading.rows[0].property_id))return res.status(403).json({error:'Reading is outside your assigned scope'});
+ const result=await query(`UPDATE water_readings SET status='rejected',rejection_reason=$1,approved_by=null,approved_at=null,updated_at=now() WHERE id=$2 AND organization_id=$3 AND status='submitted' RETURNING *`,[parsed.data.reason,id.data,org(req)]);if(!result.rowCount)return res.status(409).json({error:'Only submitted readings can be rejected'});res.json(result.rows[0]);
+});
+
 async function billingCandidates(req:AuthedRequest,periodStart:string,periodEnd:string,propertyId?:string){
  if(propertyId&&!inScope(req,propertyId))throw Object.assign(new Error('Property is outside your assigned scope'),{status:403});
  const propertyFilter=propertyId?[propertyId]:scope(req);
- const result=await query(`SELECT l.id lease_id,l.lease_number,l.tenant_id,l.monthly_rent,l.due_day,l.start_date,l.end_date,u.unit_number,p.id property_id,p.name property_name,rt.first_name||' '||rt.last_name tenant_name,coalesce(rs.amount,l.monthly_rent) scheduled_amount,coalesce(rs.due_day,l.due_day) scheduled_due_day,coalesce(rs.grace_days,l.grace_days) grace_days FROM leases l JOIN units u ON u.id=l.unit_id JOIN properties p ON p.id=u.property_id JOIN rental_tenants rt ON rt.id=l.tenant_id LEFT JOIN LATERAL (SELECT * FROM rent_schedules x WHERE x.lease_id=l.id AND x.organization_id=l.organization_id AND x.active=true AND x.starts_on<=$3::date AND (x.ends_on IS NULL OR x.ends_on>=$2::date) ORDER BY x.starts_on DESC LIMIT 1) rs ON true WHERE l.organization_id=$1 AND l.status IN ('active','expiring') AND l.start_date<=$3::date AND l.end_date>=$2::date AND (cardinality($4::uuid[])=0 OR p.id=ANY($4::uuid[])) ORDER BY p.name,u.unit_number`,[org(req),periodStart,periodEnd,propertyFilter]);
- return result.rows;
+ const result=await query(`SELECT l.id lease_id,l.lease_number,l.tenant_id,l.monthly_rent,l.due_day,l.start_date,l.end_date,u.id unit_id,u.unit_number,p.id property_id,p.name property_name,rt.first_name||' '||rt.last_name tenant_name,rt.phone tenant_phone,rt.email tenant_email,
+  coalesce(rs.amount,l.monthly_rent) rent_amount,coalesce(rs.due_day,l.due_day) scheduled_due_day,coalesce(rs.grace_days,l.grace_days) grace_days,
+  ws.billing_method,ws.rate_per_unit,ws.flat_amount,ws.shared_amount,wr.id water_reading_id,wr.amount meter_amount,wr.status water_reading_status
+  FROM leases l JOIN units u ON u.id=l.unit_id JOIN properties p ON p.id=u.property_id JOIN rental_tenants rt ON rt.id=l.tenant_id
+  LEFT JOIN LATERAL (SELECT * FROM rent_schedules x WHERE x.lease_id=l.id AND x.organization_id=l.organization_id AND x.active=true AND x.starts_on<=$3::date AND (x.ends_on IS NULL OR x.ends_on>=$2::date) ORDER BY x.starts_on DESC LIMIT 1) rs ON true
+  LEFT JOIN property_water_settings ws ON ws.property_id=p.id AND ws.active=true
+  LEFT JOIN water_readings wr ON wr.organization_id=l.organization_id AND wr.unit_id=u.id AND wr.billing_month=date_trunc('month',$2::date)::date
+  WHERE l.organization_id=$1 AND l.status IN ('active','expiring') AND l.start_date<=$3::date AND l.end_date>=$2::date AND (cardinality($4::uuid[])=0 OR p.id=ANY($4::uuid[])) ORDER BY p.name,u.unit_number`,[org(req),periodStart,periodEnd,propertyFilter]);
+ const counts=new Map<string,number>();for(const row of result.rows as any[])counts.set(row.property_id,(counts.get(row.property_id)||0)+1);
+ return (result.rows as any[]).map(row=>{const method=row.billing_method||'none';let waterAmount=0,waterStatus='not_set',ready=true;if(method==='meter'){waterAmount=row.water_reading_status==='approved'?Number(row.meter_amount||0):0;waterStatus=row.water_reading_status||'missing';ready=row.water_reading_status==='approved';}else if(method==='flat'){waterAmount=Number(row.flat_amount||0);waterStatus='automatic';}else if(method==='shared'){waterAmount=Math.round((Number(row.shared_amount||0)/Math.max(1,counts.get(row.property_id)||1))*100)/100;waterStatus='automatic';}const rentAmount=Number(row.rent_amount);return {...row,rent_amount:rentAmount,water_amount:waterAmount,total_amount:rentAmount+waterAmount,water_status:waterStatus,ready};});
 }
 
 router.post('/rental/billing/preview',requirePermission('finance.read'),async(req:AuthedRequest,res)=>{
  const input=z.object({periodStart:z.string(),periodEnd:z.string(),propertyId:z.string().uuid().optional()}).safeParse(req.body); if(!input.success)return res.status(400).json({error:input.error.flatten()});
- const rows=await billingCandidates(req,input.data.periodStart,input.data.periodEnd,input.data.propertyId); const total=rows.reduce((sum:any,r:any)=>sum+Number(r.scheduled_amount),0);
- res.json({periodStart:input.data.periodStart,periodEnd:input.data.periodEnd,count:rows.length,total,items:rows});
+ const rows=await billingCandidates(req,input.data.periodStart,input.data.periodEnd,input.data.propertyId); const total=rows.reduce((sum:any,r:any)=>sum+Number(r.total_amount),0),missingReadings=rows.filter((r:any)=>!r.ready).length;
+ res.json({periodStart:input.data.periodStart,periodEnd:input.data.periodEnd,count:rows.length,total,missingReadings,ready:missingReadings===0,items:rows});
 });
 
 router.post('/rental/billing/post',requirePermission('finance.write'),async(req:AuthedRequest,res)=>{
  const input=z.object({periodStart:z.string(),periodEnd:z.string(),propertyId:z.string().uuid().optional(),runKey:z.string().min(8).max(120)}).safeParse(req.body); if(!input.success)return res.status(400).json({error:input.error.flatten()});
  const d=input.data,existing=await query(`SELECT * FROM billing_runs WHERE organization_id=$1 AND run_key=$2`,[org(req),d.runKey]); if(existing.rowCount)return res.json({...existing.rows[0],idempotentReplay:true});
  const candidates=await billingCandidates(req,d.periodStart,d.periodEnd,d.propertyId);
+ const missing=candidates.filter((row:any)=>!row.ready);if(missing.length)return res.status(409).json({error:`Approve ${missing.length} missing water reading${missing.length===1?'':'s'} before creating invoices`});
  const result=await withTransaction(async client=>{
   const run=await client.query(`INSERT INTO billing_runs(organization_id,run_key,period_start,period_end,property_id,status,created_by) VALUES($1,$2,$3,$4,$5,'previewed',$6) RETURNING *`,[org(req),d.runKey,d.periodStart,d.periodEnd,d.propertyId||null,req.auth!.userId]);
   let count=0,total=0;
   for(const row of candidates as any[]){
-   const amount=Number(row.scheduled_amount); const dueDay=Math.max(1,Math.min(28,Number(row.scheduled_due_day||5))); const dueDate=`${d.periodStart.slice(0,7)}-${String(dueDay).padStart(2,'0')}`; const number=`RNT-${monthKey(d.periodStart)}-${String(row.lease_number).replace(/[^A-Za-z0-9]/g,'').slice(-12)}`;
+   const rentAmount=Number(row.rent_amount),waterAmount=Number(row.water_amount),amount=rentAmount+waterAmount; const dueDay=Math.max(1,Math.min(28,Number(row.scheduled_due_day||5))); const dueDate=`${d.periodStart.slice(0,7)}-${String(dueDay).padStart(2,'0')}`; const number=`RNT-${monthKey(d.periodStart)}-${String(row.lease_number).replace(/[^A-Za-z0-9]/g,'').slice(-12)}`;
    const invoice=await client.query(`INSERT INTO invoices(organization_id,tenant_id,lease_id,invoice_number,period_start,period_end,due_date,subtotal,total,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$8,'issued') ON CONFLICT DO NOTHING RETURNING id`,[org(req),row.tenant_id,row.lease_id,number,d.periodStart,d.periodEnd,dueDate,amount]);
-   if(invoice.rowCount){await client.query(`INSERT INTO invoice_items(organization_id,invoice_id,item_type,description,quantity,unit_price,total) VALUES($1,$2,'rent',$3,1,$4,$4)`,[org(req),invoice.rows[0].id,`Rent · ${row.property_name} ${row.unit_number}`,amount]);count+=1;total+=amount;}
+   if(invoice.rowCount){await client.query(`INSERT INTO invoice_items(organization_id,invoice_id,item_type,description,quantity,unit_price,total) VALUES($1,$2,'rent',$3,1,$4,$4)`,[org(req),invoice.rows[0].id,`Rent · ${row.property_name} ${row.unit_number}`,rentAmount]);if(waterAmount>0)await client.query(`INSERT INTO invoice_items(organization_id,invoice_id,item_type,description,quantity,unit_price,total) VALUES($1,$2,'water',$3,1,$4,$4)`,[org(req),invoice.rows[0].id,`Water · ${row.property_name} ${row.unit_number}`,waterAmount]);count+=1;total+=amount;}
   }
   await client.query(`UPDATE billing_runs SET status='posted',invoice_count=$1,total_amount=$2,posted_at=now(),metadata=$3::jsonb WHERE id=$4`,[count,total,JSON.stringify({candidateCount:candidates.length,skipped:candidates.length-count}),run.rows[0].id]);
   await client.query(`INSERT INTO audit_logs(organization_id,user_id,action,entity_type,entity_id,metadata) VALUES($1,$2,'billing.run.post','billing_run',$3,$4::jsonb)`,[org(req),req.auth!.userId,run.rows[0].id,JSON.stringify({periodStart:d.periodStart,periodEnd:d.periodEnd,count,total})]);
@@ -62,6 +147,25 @@ router.post('/rental/billing/post',requirePermission('finance.write'),async(req:
  res.status(201).json(result);
 });
 router.get('/rental/billing/runs',requirePermission('finance.read'),async(req:AuthedRequest,res)=>{const r=await query(`SELECT br.*,p.name property_name FROM billing_runs br LEFT JOIN properties p ON p.id=br.property_id WHERE br.organization_id=$1 ORDER BY br.created_at DESC LIMIT 100`,[org(req)]);res.json(r.rows)});
+
+router.get('/rental/invoices',requirePermission('finance.read'),async(req:AuthedRequest,res)=>{
+ const result=await query(`SELECT i.*,rt.first_name||' '||rt.last_name tenant_name,rt.phone tenant_phone,rt.email tenant_email,u.unit_number,p.id property_id,p.name property_name,
+  coalesce((SELECT json_agg(json_build_object('type',ii.item_type,'description',ii.description,'amount',ii.total) ORDER BY ii.id) FROM invoice_items ii WHERE ii.invoice_id=i.id),'[]'::json) items,
+  (SELECT ic.channel FROM invoice_communications ic WHERE ic.invoice_id=i.id ORDER BY ic.created_at DESC LIMIT 1) last_channel,
+  (SELECT ic.sent_at FROM invoice_communications ic WHERE ic.invoice_id=i.id ORDER BY ic.created_at DESC LIMIT 1) last_shared_at
+  FROM invoices i JOIN rental_tenants rt ON rt.id=i.tenant_id LEFT JOIN leases l ON l.id=i.lease_id LEFT JOIN units u ON u.id=l.unit_id LEFT JOIN properties p ON p.id=u.property_id
+  WHERE i.organization_id=$1 AND (cardinality($2::uuid[])=0 OR p.id=ANY($2::uuid[])) ORDER BY i.created_at DESC LIMIT 250`,[org(req),scope(req)]);res.json(result.rows);
+});
+
+router.post('/rental/invoices/:id/share',requirePermission('finance.write'),async(req:AuthedRequest,res)=>{
+ const id=z.string().uuid().safeParse(req.params.id),input=z.object({channel:z.enum(['whatsapp','sms','email'])}).safeParse(req.body);if(!id.success||!input.success)return res.status(400).json({error:'Choose a valid invoice and channel'});
+ const found=await query<any>(`SELECT i.id,i.invoice_number,i.total,i.due_date,rt.id tenant_id,rt.first_name,rt.phone,rt.email,u.unit_number,p.id property_id,p.name property_name FROM invoices i JOIN rental_tenants rt ON rt.id=i.tenant_id LEFT JOIN leases l ON l.id=i.lease_id LEFT JOIN units u ON u.id=l.unit_id LEFT JOIN properties p ON p.id=u.property_id WHERE i.id=$1 AND i.organization_id=$2`,[id.data,org(req)]);if(!found.rowCount)return res.status(404).json({error:'Invoice not found'});const invoice=found.rows[0];if(invoice.property_id&&!inScope(req,invoice.property_id))return res.status(403).json({error:'Invoice is outside your assigned scope'});
+ const channel=input.data.channel,recipient=channel==='email'?invoice.email:invoice.phone;if(!recipient)return res.status(400).json({error:`Tenant has no ${channel==='email'?'email address':'phone number'}`});
+ const message=`Hello ${invoice.first_name}, your ${invoice.property_name||'property'} bill for unit ${invoice.unit_number||'—'} is KES ${Number(invoice.total).toLocaleString()} and is due on ${new Date(invoice.due_date).toLocaleDateString('en-KE')}. Invoice ${invoice.invoice_number}.`;
+ let actionUrl='';if(channel==='email')actionUrl=`mailto:${encodeURIComponent(recipient)}?subject=${encodeURIComponent(`Invoice ${invoice.invoice_number}`)}&body=${encodeURIComponent(message)}`;else{let phone=String(recipient).replace(/\D/g,'');if(phone.startsWith('0'))phone=`254${phone.slice(1)}`;actionUrl=channel==='whatsapp'?`https://wa.me/${phone}?text=${encodeURIComponent(message)}`:`sms:+${phone}?body=${encodeURIComponent(message)}`;}
+ await query(`INSERT INTO invoice_communications(organization_id,invoice_id,tenant_id,channel,recipient,message,status,sent_by) VALUES($1,$2,$3,$4,$5,$6,'opened',$7)`,[org(req),id.data,invoice.tenant_id,channel,recipient,message,req.auth!.userId]);
+ res.json({actionUrl,message,status:'opened'});
+});
 
 router.get('/rental/tenant/:tenantId/lifecycle',async(req:AuthedRequest,res)=>{
  await tenantAccess(req,req.params.tenantId);

@@ -128,9 +128,9 @@ export async function auth(req:AuthedRequest,res:Response,next:NextFunction){
 const permissionMatrix:Record<string,Set<string>>={
   owner:new Set(['*']),admin:new Set(['*']),
   accountant:new Set(['portfolio.read','finance.read','finance.write','reports.read','workflow.approve','workflow.execute']),
-  property_manager:new Set(['portfolio.read','finance.read','property.write','tenant.write','lease.write','maintenance.write','reports.read','workflow.approve']),
+  property_manager:new Set(['portfolio.read','finance.read','finance.write','property.write','tenant.write','lease.write','maintenance.write','water.write','reports.read','workflow.approve']),
   leasing_agent:new Set(['portfolio.read','tenant.write','lease.write']),
-  caretaker:new Set(['portfolio.read','maintenance.write']),
+  caretaker:new Set(['portfolio.read','maintenance.write','water.write']),
   maintenance:new Set(['portfolio.read','maintenance.write']),
   auditor:new Set(['portfolio.read','finance.read','reports.read','audit.read']),
 };
