@@ -80,7 +80,7 @@ app.get('/api/units', async (req: AuthedRequest, res) => {
 });
 
 app.post('/api/units', requirePermission('property.write'), async (req: AuthedRequest, res) => {
-  const input=z.object({ propertyId:z.string().uuid(), buildingId:z.string().uuid().optional(), unitNumber:z.string().min(1), unitType:z.string().default('apartment'), bedrooms:z.number().int().nonnegative().optional(), marketRent:z.number().nonnegative().default(0), depositAmount:z.number().nonnegative().default(0) }).safeParse(req.body);
+  const input=z.object({ propertyId:z.string().uuid(), buildingId:z.string().uuid().optional(), unitNumber:z.string().trim().min(1).max(40), unitType:z.string().trim().min(2).max(80).default('bedsitter'), bedrooms:z.number().int().min(0).max(20).optional(), marketRent:z.number().nonnegative().default(0), depositAmount:z.number().nonnegative().default(0) }).safeParse(req.body);
   if(!input.success) return res.status(400).json({error:input.error.flatten()});
   const d=input.data;
   if(!propertyAllowed(req,d.propertyId))return res.status(403).json({error:'Property is outside your assigned scope'});
