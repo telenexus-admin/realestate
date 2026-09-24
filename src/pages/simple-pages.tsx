@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Building2, CalendarDays, CheckCircle2, CircleDollarSign, Download, FileBarChart, Home, KeyRound, Layers3, Mail, MapPin, Phone, Printer, Search, Upload, UserPlus, Users, WalletCards, Wrench, X } from 'lucide-react';
+import { AlertTriangle, Building2, CalendarDays, CheckCircle2, ChevronDown, ChevronRight, CircleDollarSign, Download, FileBarChart, Home, KeyRound, Layers3, Mail, MapPin, Phone, Printer, Search, Upload, UserPlus, Users, WalletCards, Wrench, X } from 'lucide-react';
 import { api, getToken } from '../api';
 import { DataTable, MetricCard, ModuleHeader, Panel, Status } from '../ui';
 import './tenant-page.css';
@@ -69,32 +69,33 @@ export function SimpleUnitsPage({onAdd,refreshKey}:{onAdd:()=>void;refreshKey:nu
 
 export function SimpleTenantsPage({onAdd,refreshKey}:{onAdd:()=>void;refreshKey:number}){
   const {rows,loading,error}=useRows(api.tenants,refreshKey);
-  const [query,setQuery]=useState(''),[property,setProperty]=useState(''),[view,setView]=useState<'all'|'owing'|'expiring'>('all');
+  const [query,setQuery]=useState(''),[property,setProperty]=useState(''),[openSection,setOpenSection]=useState<'due'|'all'|null>('due');
   const [portalTenant,setPortalTenant]=useState<RecordRow|null>(null),[portalCreated,setPortalCreated]=useState<string[]>([]);
-  const owing=rows.filter(t=>Number(t.balance)>0),leased=rows.filter(t=>t.unit_number);
-  const isExpiring=(tenant:RecordRow)=>{if(!tenant.end_date)return false;const days=(new Date(tenant.end_date).getTime()-Date.now())/86400000;return days>=0&&days<=60};
-  const expiring=rows.filter(isExpiring);
+  const owing=rows.filter(t=>Number(t.balance)>0);
   const properties=useMemo(()=>Array.from(new Set(rows.map(t=>String(t.property_name||'')).filter(Boolean))).sort(),[rows]);
   const visible=useMemo(()=>rows.filter(tenant=>{
     const text=`${tenant.first_name||''} ${tenant.last_name||''} ${tenant.phone||''} ${tenant.email||''} ${tenant.property_name||''} ${tenant.unit_number||''}`.toLowerCase();
-    return (!query||text.includes(query.toLowerCase()))&&(!property||tenant.property_name===property)&&(view==='all'||view==='owing'&&Number(tenant.balance)>0||view==='expiring'&&isExpiring(tenant));
-  }),[rows,query,property,view]);
+    return (!query||text.includes(query.toLowerCase()))&&(!property||tenant.property_name===property);
+  }),[rows,query,property]);
+  const dueVisible=visible.filter(tenant=>Number(tenant.balance)>0);
   const initials=(tenant:RecordRow)=>`${String(tenant.first_name||'').charAt(0)}${String(tenant.last_name||'').charAt(0)}`.toUpperCase()||'T';
+  const tenantList=(items:RecordRow[],emptyTitle:string,emptyText:string)=><>
+    <div className="tenant-list-head"><span>Tenant</span><span>Home</span><span>Contact</span><span>Lease</span><span>Balance</span></div>
+    <div className="tenant-list">{items.map(tenant=><article key={tenant.id} className={Number(tenant.balance)>0?'owes':''}>
+      <div className="tenant-person"><span className="tenant-avatar">{initials(tenant)}</span><span><strong>{tenant.first_name} {tenant.last_name}</strong><small>{tenant.national_id?`ID ${tenant.national_id}`:'Tenant record'}</small><button className={(tenant.portal_active||portalCreated.includes(tenant.id))?'tenant-portal-action active':'tenant-portal-action'} onClick={()=>setPortalTenant(tenant)}><KeyRound size={11}/>{tenant.portal_active||portalCreated.includes(tenant.id)?'Manage portal':'Create portal access'}</button></span></div>
+      <div className="tenant-home"><Home size={15}/><span><strong>{tenant.property_name||'No property'}</strong><small>{tenant.unit_number?`Unit ${tenant.unit_number}`:'No active unit'}</small></span></div>
+      <div className="tenant-contact"><a href={tenant.phone?`tel:${tenant.phone}`:undefined}><Phone size={14}/><span>{tenant.phone||'No phone'}</span></a>{tenant.email&&<a href={`mailto:${tenant.email}`}><Mail size={14}/><span>{tenant.email}</span></a>}</div>
+      <div className="tenant-lease"><CalendarDays size={15}/><span><strong>{money(tenant.monthly_rent)} / month</strong><small>{tenant.end_date?`Ends ${new Date(tenant.end_date).toLocaleDateString('en-KE',{day:'numeric',month:'short',year:'numeric'})}`:'No active lease'}</small></span></div>
+      <div className="tenant-balance"><span className={Number(tenant.balance)>0?'due':'clear'}>{Number(tenant.balance)>0?'Balance due':'Up to date'}</span><strong>{money(tenant.balance)}</strong></div>
+    </article>)}{!loading&&!items.length&&<div className="tenant-empty"><Users size={25}/><strong>{emptyTitle}</strong><span>{emptyText}</span></div>}</div>
+  </>;
   return <div className="tenant-workspace">
-    <section className="tenant-hero"><div className="tenant-hero-copy"><span><Users size={14}/> TENANT WORKSPACE</span><h1>People, homes and rent</h1><p>Find a tenant, check their home and see who needs attention without opening several screens.</p><div className="tenant-hero-pills"><span>{leased.length} in a unit</span><span>{owing.length} need follow-up</span></div></div><div className="tenant-hero-action"><small>ACTIVE TENANTS</small><strong>{rows.length}</strong><button onClick={onAdd}><UserPlus size={16}/> Add tenant</button></div></section>
+    <section className="tenant-simple-head"><div><span className="panel-kicker">TENANTS</span><h1>Tenant list</h1><p>{rows.length} tenant{rows.length===1?'':'s'} · {owing.length} with rent due</p></div><button className="tenant-add-icon" onClick={onAdd} aria-label="Add tenant" title="Add tenant"><UserPlus size={18}/></button></section>
     <Notice loading={loading} error={error} empty={!rows.length}/>
-    <div className="metric-grid four tenant-metrics"><MetricCard label="Tenants" value={String(rows.length)} note="All tenant records" icon={Users}/><MetricCard label="In a unit" value={String(leased.length)} note="Tenants with active leases" icon={Home} tone="success"/><MetricCard label="With a balance" value={String(owing.length)} note="Need rent follow-up" icon={CircleDollarSign} tone="danger"/><MetricCard label="Total balance" value={money(owing.reduce((n,t)=>n+Number(t.balance||0),0))} note="Outstanding rent" icon={WalletCards}/></div>
-    <section className="tenant-directory"><div className="tenant-directory-head"><div><span className="panel-kicker">TENANT DIRECTORY</span><h2>All your tenants</h2><p>{visible.length} of {rows.length} tenant{rows.length===1?'':'s'} shown</p></div><button className="tenant-add-secondary" onClick={onAdd}><UserPlus size={15}/> Add tenant</button></div>
-      <div className="tenant-tools"><label className="tenant-search"><Search size={16}/><input value={query} onChange={event=>setQuery(event.target.value)} placeholder="Search name, phone, property or unit"/></label><select aria-label="Filter tenants by property" value={property} onChange={event=>setProperty(event.target.value)}><option value="">All properties</option>{properties.map(name=><option key={name}>{name}</option>)}</select></div>
-      <div className="tenant-tabs" role="tablist" aria-label="Tenant views"><button className={view==='all'?'active':''} onClick={()=>setView('all')}>All tenants <em>{rows.length}</em></button><button className={view==='owing'?'active':''} onClick={()=>setView('owing')}>With balance <em>{owing.length}</em></button><button className={view==='expiring'?'active':''} onClick={()=>setView('expiring')}>Lease ending <em>{expiring.length}</em></button></div>
-      <div className="tenant-list-head"><span>Tenant</span><span>Home</span><span>Contact</span><span>Lease</span><span>Balance</span></div>
-      <div className="tenant-list">{visible.map(tenant=><article key={tenant.id} className={Number(tenant.balance)>0?'owes':''}>
-        <div className="tenant-person"><span className="tenant-avatar">{initials(tenant)}</span><span><strong>{tenant.first_name} {tenant.last_name}</strong><small>{tenant.national_id?`ID ${tenant.national_id}`:'Tenant record'}</small><button className={(tenant.portal_active||portalCreated.includes(tenant.id))?'tenant-portal-action active':'tenant-portal-action'} onClick={()=>setPortalTenant(tenant)}><KeyRound size={11}/>{tenant.portal_active||portalCreated.includes(tenant.id)?'Manage portal':'Create portal access'}</button></span></div>
-        <div className="tenant-home"><Home size={15}/><span><strong>{tenant.property_name||'No property'}</strong><small>{tenant.unit_number?`Unit ${tenant.unit_number}`:'No active unit'}</small></span></div>
-        <div className="tenant-contact"><a href={tenant.phone?`tel:${tenant.phone}`:undefined}><Phone size={14}/><span>{tenant.phone||'No phone'}</span></a>{tenant.email&&<a href={`mailto:${tenant.email}`}><Mail size={14}/><span>{tenant.email}</span></a>}</div>
-        <div className="tenant-lease"><CalendarDays size={15}/><span><strong>{money(tenant.monthly_rent)} / month</strong><small>{tenant.end_date?`Ends ${new Date(tenant.end_date).toLocaleDateString('en-KE',{day:'numeric',month:'short',year:'numeric'})}`:'No active lease'}</small></span></div>
-        <div className="tenant-balance"><span className={Number(tenant.balance)>0?'due':'clear'}>{Number(tenant.balance)>0?'Balance due':'Up to date'}</span><strong>{money(tenant.balance)}</strong></div>
-      </article>)}{!loading&&!visible.length&&<div className="tenant-empty"><Users size={25}/><strong>No tenants found</strong><span>Try a different search or filter.</span></div>}</div>
+    <section className="tenant-directory tenant-directory-simple">
+      <div className="tenant-tools"><label className="tenant-search"><Search size={16}/><input value={query} onChange={event=>setQuery(event.target.value)} placeholder="Search tenants"/></label><select aria-label="Filter tenants by property" value={property} onChange={event=>setProperty(event.target.value)}><option value="">All properties</option>{properties.map(name=><option key={name}>{name}</option>)}</select></div>
+      <section className={openSection==='due'?'tenant-collapse open':'tenant-collapse'}><button className="tenant-collapse-button" onClick={()=>setOpenSection(current=>current==='due'?null:'due')} aria-expanded={openSection==='due'}>{openSection==='due'?<ChevronDown size={17}/>:<ChevronRight size={17}/>}<span><strong>Tenants who are due</strong><small>Outstanding rent or bills</small></span><em>{owing.length}</em></button>{openSection==='due'&&<div className="tenant-collapse-body">{tenantList(dueVisible,'No tenants are due','Everyone is currently up to date.')}</div>}</section>
+      <section className={openSection==='all'?'tenant-collapse open':'tenant-collapse'}><button className="tenant-collapse-button" onClick={()=>setOpenSection(current=>current==='all'?null:'all')} aria-expanded={openSection==='all'}>{openSection==='all'?<ChevronDown size={17}/>:<ChevronRight size={17}/>}<span><strong>All tenants</strong><small>Complete tenant list</small></span><em>{rows.length}</em></button>{openSection==='all'&&<div className="tenant-collapse-body">{tenantList(visible,'No tenants found','Try a different search or property.')}</div>}</section>
     </section>{portalTenant&&<TenantPortalAccessModal tenant={portalTenant} active={Boolean(portalTenant.portal_active||portalCreated.includes(portalTenant.id))} onClose={()=>setPortalTenant(null)} onCreated={()=>setPortalCreated(ids=>[...ids,portalTenant.id])}/>}
   </div>;
 }
