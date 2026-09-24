@@ -107,6 +107,25 @@ app.post('/api/tenants', requirePermission('tenant.write'), async (req: AuthedRe
   res.status(201).json(result.rows[0]);
 });
 
+app.post('/api/tenancies', requirePermission('tenant.write'), async (req: AuthedRequest, res) => {
+  const input=z.object({firstName:z.string().trim().min(1),lastName:z.string().trim().min(1),phone:z.string().trim().min(6),email:z.string().email().optional(),nationalId:z.string().optional(),unitId:z.string().uuid(),startDate:z.string(),endDate:z.string(),monthlyRent:z.number().positive(),depositAmount:z.number().nonnegative().default(0),dueDay:z.number().int().min(1).max(28).default(5)}).safeParse(req.body);
+  if(!input.success)return res.status(400).json({error:'Complete the tenant, unit and lease details',fields:input.error.flatten().fieldErrors});
+  const d=input.data;if(d.endDate<d.startDate)return res.status(400).json({error:'Lease end date must be after the start date'});
+  const result=await withTransaction(async client=>{
+    const unit=await client.query<{id:string;property_id:string;status:string}>(`SELECT id,property_id,status FROM units WHERE id=$1 AND organization_id=$2 FOR UPDATE`,[d.unitId,tenantId(req)]);
+    if(!unit.rowCount)throw Object.assign(new Error('Unit not found'),{status:404});
+    if(!propertyAllowed(req,unit.rows[0].property_id))throw Object.assign(new Error('Unit is outside your assigned property scope'),{status:403});
+    if(unit.rows[0].status==='occupied')throw Object.assign(new Error('That unit is already occupied'),{status:409});
+    const active=await client.query(`SELECT 1 FROM leases WHERE organization_id=$1 AND unit_id=$2 AND status IN ('active','expiring')`,[tenantId(req),d.unitId]);if(active.rowCount)throw Object.assign(new Error('That unit already has an active lease'),{status:409});
+    const tenant=await client.query<{id:string}>(`INSERT INTO rental_tenants(organization_id,first_name,last_name,phone,email,national_id) VALUES($1,$2,$3,$4,$5,$6) RETURNING id`,[tenantId(req),d.firstName,d.lastName,d.phone,d.email||null,d.nationalId||null]);
+    const lease=await client.query(`INSERT INTO leases(organization_id,unit_id,tenant_id,lease_number,start_date,end_date,monthly_rent,deposit_amount,due_day,status,signed_at) VALUES($1,$2,$3,'LSE-'||upper(substr(replace(gen_random_uuid()::text,'-',''),1,10)),$4,$5,$6,$7,$8,'active',now()) RETURNING *`,[tenantId(req),d.unitId,tenant.rows[0].id,d.startDate,d.endDate,d.monthlyRent,d.depositAmount,d.dueDay]);
+    await client.query(`UPDATE units SET status='occupied',updated_at=now() WHERE id=$1`,[d.unitId]);
+    await client.query(`INSERT INTO audit_logs(organization_id,user_id,action,entity_type,entity_id,metadata) VALUES($1,$2,'tenancy.created','lease',$3,$4::jsonb)`,[tenantId(req),req.auth!.userId,lease.rows[0].id,JSON.stringify({tenantId:tenant.rows[0].id,unitId:d.unitId})]);
+    return {tenantId:tenant.rows[0].id,lease:lease.rows[0]};
+  });
+  res.status(201).json(result);
+});
+
 app.get('/api/leases', async (req: AuthedRequest, res) => {
   const scope=propertyScope(req);
   const result=await query(`SELECT l.*,rt.first_name||' '||rt.last_name tenant_name,u.unit_number,p.name property_name FROM leases l JOIN rental_tenants rt ON rt.id=l.tenant_id JOIN units u ON u.id=l.unit_id JOIN properties p ON p.id=u.property_id WHERE l.organization_id=$1 AND (cardinality($2::uuid[])=0 OR p.id=ANY($2::uuid[])) ORDER BY l.end_date`,[tenantId(req),scope]);

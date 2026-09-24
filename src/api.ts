@@ -125,6 +125,7 @@ export const api = {
   createUnit: (payload: unknown) => request('/api/units', { method: 'POST', body: JSON.stringify(payload) }),
   tenants: () => request<any[]>('/api/tenants'),
   createTenant: (payload: unknown) => request('/api/tenants', { method: 'POST', body: JSON.stringify(payload) }),
+  createTenancy: (payload: unknown) => request('/api/tenancies', { method: 'POST', body: JSON.stringify(payload) }),
   owners: () => request<any[]>('/api/owners'),
   leases: () => request<any[]>('/api/leases'),
   createLease: (payload: unknown) => request('/api/leases', { method: 'POST', body: JSON.stringify(payload) }),
