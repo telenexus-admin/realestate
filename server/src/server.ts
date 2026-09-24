@@ -10,7 +10,10 @@ import operatorRouter from './operator-routes.js';
 import teamRouter from './team-routes.js';
 import communityRouter from './community-routes.js';
 import portalRouter from './portal-routes.js';
+import onboardingRouter from './onboarding-routes.js';
 import authRouter, { auth, requirePermission, type AuthedRequest } from './auth.js';
+import { provisionTenantOnboarding } from './onboarding-service.js';
+import { processEmailJobs, startEmailWorker } from './email-service.js';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -38,6 +41,7 @@ app.use('/api', portalRouter);
 app.use('/api',(req:AuthedRequest,res,next)=>req.auth?.role==='tenant'?res.status(403).json({error:'This area is for property management accounts'}):next());
 app.use('/api', operatorRouter);
 app.use('/api', teamRouter);
+app.use('/api', onboardingRouter);
 app.use('/api', communityRouter);
 app.use('/api', workflowRouter);
 app.use('/api', rentalRouter);
@@ -99,6 +103,8 @@ app.get('/api/tenants', async (req: AuthedRequest, res) => {
   const scope=propertyScope(req);
   const result=await query(`SELECT rt.*,l.lease_number,l.monthly_rent,l.end_date,u.unit_number,p.name property_name,
     EXISTS(SELECT 1 FROM tenant_portal_accounts tpa WHERE tpa.organization_id=rt.organization_id AND tpa.tenant_id=rt.id) portal_active,
+    (SELECT ej.status FROM email_jobs ej WHERE ej.organization_id=rt.organization_id AND ej.tenant_id=rt.id AND ej.job_type='tenant_welcome' ORDER BY ej.created_at DESC LIMIT 1) welcome_status,
+    (SELECT ej.sent_at FROM email_jobs ej WHERE ej.organization_id=rt.organization_id AND ej.tenant_id=rt.id AND ej.job_type='tenant_welcome' ORDER BY ej.created_at DESC LIMIT 1) welcome_sent_at,
     coalesce(sum(i.total-i.paid_amount) FILTER (WHERE i.status IN ('issued','partial','overdue')),0) balance
     FROM rental_tenants rt LEFT JOIN leases l ON l.tenant_id=rt.id AND l.status IN ('active','expiring')
     LEFT JOIN units u ON u.id=l.unit_id LEFT JOIN properties p ON p.id=u.property_id LEFT JOIN invoices i ON i.tenant_id=rt.id
@@ -114,7 +120,7 @@ app.post('/api/tenants', requirePermission('tenant.write'), async (req: AuthedRe
 });
 
 app.post('/api/tenancies', requirePermission('tenant.write'), async (req: AuthedRequest, res) => {
-  const input=z.object({firstName:z.string().trim().min(1),lastName:z.string().trim().min(1),phone:z.string().trim().min(6),email:z.string().email().optional(),nationalId:z.string().optional(),unitId:z.string().uuid(),startDate:z.string(),endDate:z.string(),monthlyRent:z.number().positive(),depositAmount:z.number().nonnegative().default(0),dueDay:z.number().int().min(1).max(28).default(5)}).safeParse(req.body);
+  const input=z.object({firstName:z.string().trim().min(1),lastName:z.string().trim().min(1),phone:z.string().trim().min(6),email:z.string().trim().email(),nationalId:z.string().optional(),unitId:z.string().uuid(),startDate:z.string(),endDate:z.string(),monthlyRent:z.number().positive(),depositAmount:z.number().nonnegative().default(0),dueDay:z.number().int().min(1).max(28).default(5),createPortal:z.boolean().default(true),sendWelcome:z.boolean().default(true),invoiceFirstRent:z.boolean().default(true),invoiceDeposit:z.boolean().default(true)}).safeParse(req.body);
   if(!input.success)return res.status(400).json({error:'Complete the tenant, unit and lease details',fields:input.error.flatten().fieldErrors});
   const d=input.data;if(d.endDate<d.startDate)return res.status(400).json({error:'Lease end date must be after the start date'});
   const result=await withTransaction(async client=>{
@@ -127,8 +133,10 @@ app.post('/api/tenancies', requirePermission('tenant.write'), async (req: Authed
     const lease=await client.query(`INSERT INTO leases(organization_id,unit_id,tenant_id,lease_number,start_date,end_date,monthly_rent,deposit_amount,due_day,status,signed_at) VALUES($1,$2,$3,'LSE-'||upper(substr(replace(gen_random_uuid()::text,'-',''),1,10)),$4,$5,$6,$7,$8,'active',now()) RETURNING *`,[tenantId(req),d.unitId,tenant.rows[0].id,d.startDate,d.endDate,d.monthlyRent,d.depositAmount,d.dueDay]);
     await client.query(`UPDATE units SET status='occupied',updated_at=now() WHERE id=$1`,[d.unitId]);
     await client.query(`INSERT INTO audit_logs(organization_id,user_id,action,entity_type,entity_id,metadata) VALUES($1,$2,'tenancy.created','lease',$3,$4::jsonb)`,[tenantId(req),req.auth!.userId,lease.rows[0].id,JSON.stringify({tenantId:tenant.rows[0].id,unitId:d.unitId})]);
-    return {tenantId:tenant.rows[0].id,lease:lease.rows[0]};
+    const onboarding=await provisionTenantOnboarding(client,{organizationId:tenantId(req),tenantId:tenant.rows[0].id,leaseId:lease.rows[0].id,createdBy:req.auth!.userId,createPortal:d.createPortal,sendWelcome:d.createPortal&&d.sendWelcome,invoiceFirstRent:d.invoiceFirstRent,invoiceDeposit:d.invoiceDeposit});
+    return {tenantId:tenant.rows[0].id,lease:lease.rows[0],onboarding};
   });
+  void processEmailJobs().catch(console.error);
   res.status(201).json(result);
 });
 
@@ -214,4 +222,4 @@ app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
   res.status(status).json({ error: error instanceof Error ? error.message : 'Internal server error' });
 });
 
-app.listen(PORT, () => console.log(`Polyizon PropOS API listening on :${PORT}`));
+app.listen(PORT, () => {console.log(`Polyizon PropOS API listening on :${PORT}`);startEmailWorker();});

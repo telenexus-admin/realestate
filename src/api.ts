@@ -29,6 +29,8 @@ export type OperatorSummary={organizations:number;active:number;trial:number;sus
 export type OperatorOrganization={id:string;name:string;slug:string;status:'trial'|'active'|'suspended'|'closed';plan:string;email?:string|null;phone?:string|null;currency:string;timezone:string;created_at:string;unit_limit:number;trial_ends_at?:string|null;user_count:number;unit_count:number};
 export type OrganizationOnboarding={companyName:string;slug:string;companyEmail?:string;companyPhone?:string;plan:'starter'|'growth'|'professional';unitLimit:number;status:'trial'|'active';adminFirstName:string;adminLastName:string;adminEmail:string;adminPhone?:string;temporaryPassword:string};
 export type TenantPortalData={tenant:any;balance:number;payments:any[];invoices:any[];documents:any[];tickets:any[]};
+export type OnboardingSettings={sender_name:string;reply_to_email:string;welcome_message:string;portal_base_url:string;auto_create_portal:boolean;auto_send_welcome:boolean;invoice_first_rent:boolean;invoice_deposit:boolean};
+export type OnboardingTemplate={id:string;property_id?:string|null;property_name?:string|null;document_type:string;name:string;source_type:string;file_name?:string|null;version:number;status:string;created_at:string};
 
 export class ApiError extends Error{
   status:number;
@@ -115,6 +117,7 @@ export const api = {
     setToken(session.token);
     return session;
   },
+  activateTenant:(token:string,password:string)=>request<{activated:true;email:string;organizationSlug:string}>('/api/auth/activate',{method:'POST',body:JSON.stringify({token,password})},false),
   devLogin: async (email: string, organizationSlug: string) => {
     const session = await request<Session>('/api/auth/dev-login', {method: 'POST', body: JSON.stringify({ email, organizationSlug })},false);
     setToken(session.token);
@@ -179,6 +182,11 @@ export const api = {
   shareInvoice:(id:string,channel:'whatsapp'|'sms'|'email')=>request<{actionUrl:string;message:string;status:string}>(`/api/rental/invoices/${id}/share`,{method:'POST',body:JSON.stringify({channel})}),
   team:()=>request<any[]>('/api/team'),
   createCaretaker:(payload:{firstName:string;lastName:string;email:string;phone:string;temporaryPassword:string;propertyIds:string[]})=>request('/api/team/caretakers',{method:'POST',body:JSON.stringify(payload)}),
+  onboardingSettings:()=>request<{settings:OnboardingSettings;templates:OnboardingTemplate[]}>('/api/onboarding/settings'),
+  saveOnboardingSettings:(payload:unknown)=>request('/api/onboarding/settings',{method:'PUT',body:JSON.stringify(payload)}),
+  createOnboardingTemplate:(payload:unknown)=>request('/api/onboarding/templates',{method:'POST',body:JSON.stringify(payload)}),
+  updateOnboardingTemplateStatus:(id:string,status:'active'|'archived')=>request(`/api/onboarding/templates/${id}/status`,{method:'PATCH',body:JSON.stringify({status})}),
+  resendTenantWelcome:(tenantId:string)=>request(`/api/team/tenant/${tenantId}/onboarding/resend`,{method:'POST',body:'{}'}),
   createTenantPortal:(payload:{tenantId:string;email:string;temporaryPassword:string})=>request('/api/team/tenant-portal',{method:'POST',body:JSON.stringify(payload)}),
   uploadTenantDocument:(tenantId:string,payload:{fileName:string;mimeType:string;contentBase64:string})=>request(`/api/team/tenant/${tenantId}/documents`,{method:'POST',body:JSON.stringify(payload)}),
   tenantPortal:()=>request<TenantPortalData>('/api/portal'),

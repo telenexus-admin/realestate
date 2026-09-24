@@ -6,6 +6,18 @@ import TenantPortal from './tenant-portal';
 import { ApiError, api, getToken, type Session } from './api';
 
 export default function AuthShell(){
+  const activationToken=new URLSearchParams(window.location.search).get('token');
+  if(window.location.pathname.startsWith('/activate'))return <TenantActivation token={activationToken||''}/>;
+  return <SignInShell/>;
+}
+
+function TenantActivation({token}:{token:string}){
+  const [password,setPassword]=useState(''),[confirm,setConfirm]=useState(''),[show,setShow]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[complete,setComplete]=useState<{email:string;organizationSlug:string}|null>(null);
+  async function activate(event:FormEvent){event.preventDefault();if(!token){setError('This activation link is incomplete. Ask your property manager to resend it.');return}if(password!==confirm){setError('The passwords do not match.');return}setBusy(true);setError('');try{setComplete(await api.activateTenant(token,password))}catch(err){setError(err instanceof Error?err.message:'Could not activate the account')}finally{setBusy(false)}}
+  return <main className="auth-shell"><section className="auth-story"><div className="auth-brand"><div className="auth-brand-mark"><Building2 size={20}/></div><div><strong>Polyizon</strong><span>PropOS</span></div></div><div className="auth-story-copy"><span className="auth-kicker"><Sparkles size={13}/> TENANT PORTAL</span><h1>Your home,<br/>payments and<br/>documents.</h1><p>Set your password once, then use PropOS whenever you need it.</p></div><div className="auth-security-grid"><div><ShieldCheck size={17}/><p><strong>Private access</strong><span>Only you can see your tenancy information.</span></p></div><div><KeyRound size={17}/><p><strong>Secure password</strong><span>Your property manager never receives it.</span></p></div></div></section><section className="auth-login-side"><form className="auth-card" onSubmit={activate}>{complete?<><div className="auth-mfa-icon"><CheckCircle2 size={22}/></div><div className="auth-card-head auth-mfa-head"><span>ACCOUNT READY</span><h2>Welcome to PropOS</h2><p>Your password has been set. Sign in with <strong>{complete.email}</strong> and company code <strong>{complete.organizationSlug}</strong>.</p></div><button type="button" className="auth-submit" onClick={()=>{window.location.href='/'}}>Continue to sign in <ArrowRight size={16}/></button></>:<><div className="auth-card-head"><span>ACTIVATE ACCOUNT</span><h2>Create your password</h2><p>Use at least 12 characters. Your activation link can only be used once.</p></div>{error&&<div className="auth-error">{error}</div>}<label><span>New password</span><div className="auth-password"><LockKeyhole size={15}/><input type={show?'text':'password'} autoComplete="new-password" minLength={12} value={password} onChange={e=>setPassword(e.target.value)} required/><button type="button" aria-label={show?'Hide password':'Show password'} onClick={()=>setShow(value=>!value)}>{show?<EyeOff size={15}/>:<Eye size={15}/>}</button></div></label><label><span>Confirm password</span><div className="auth-password"><LockKeyhole size={15}/><input type={show?'text':'password'} autoComplete="new-password" minLength={12} value={confirm} onChange={e=>setConfirm(e.target.value)} required/></div></label><button className="auth-submit" disabled={busy||password.length<12||confirm.length<12}>{busy?'Activating…':<>Activate portal <ArrowRight size={16}/></>}</button></>}</form></section></main>;
+}
+
+function SignInShell(){
   const operatorMode=window.location.pathname.startsWith('/operator');
   const allowDemo=import.meta.env.VITE_ALLOW_DEMO_MODE!=='false';
   const [mode,setMode]=useState<'checking'|'login'|'app'>('checking');

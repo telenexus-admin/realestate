@@ -16,6 +16,7 @@
     "express": "latest",
     "helmet": "latest",
     "jsonwebtoken": "latest",
+    "pdfkit": "latest",
     "pg": "latest",
     "zod": "latest"
   },
@@ -24,6 +25,7 @@
     "@types/express": "latest",
     "@types/jsonwebtoken": "latest",
     "@types/node": "latest",
+    "@types/pdfkit": "latest",
     "@types/pg": "latest",
     "tsx": "latest",
     "typescript": "latest"

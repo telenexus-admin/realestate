@@ -142,6 +142,20 @@ export function requirePermission(permission:string){return (req:AuthedRequest,r
   next();
 };}
 
+router.post('/activate',async(req,res)=>{
+  const input=z.object({token:z.string().min(32).max(200),password:z.string().min(12).max(200)}).safeParse(req.body);
+  if(!input.success)return res.status(400).json({error:'Use a password of at least 12 characters'});
+  const hash=createHash('sha256').update(input.data.token).digest('hex');
+  const activated=await withTransaction(async client=>{
+    const found=await client.query<any>(`SELECT tat.id,tat.user_id,tat.organization_id,u.email,o.slug organization_slug FROM tenant_activation_tokens tat JOIN users u ON u.id=tat.user_id JOIN organizations o ON o.id=tat.organization_id WHERE tat.token_hash=$1 AND tat.used_at IS NULL AND tat.expires_at>now() FOR UPDATE OF tat`,[hash]);
+    if(!found.rowCount)throw Object.assign(new Error('This activation link is invalid or has expired. Ask your property manager to resend it.'),{status:410});
+    const row=found.rows[0];await client.query(`UPDATE users SET password_hash=$1,password_changed_at=now(),failed_login_count=0,locked_until=NULL WHERE id=$2`,[hashPassword(input.data.password),row.user_id]);
+    await client.query(`UPDATE tenant_activation_tokens SET used_at=now() WHERE id=$1`,[row.id]);
+    await client.query(`INSERT INTO audit_logs(organization_id,user_id,action,entity_type,entity_id,metadata) VALUES($1,$2,'tenant.portal_activated','user',$2,'{}'::jsonb)`,[row.organization_id,row.user_id]);
+    return {email:row.email,organizationSlug:row.organization_slug};
+  });res.json({activated:true,...activated});
+});
+
 router.post('/login',async(req,res)=>{
   const input=z.object({email:z.string().email(),password:z.string().min(8).max(200),organizationSlug:z.string().min(1).max(80),mfaCode:z.string().min(6).max(32).optional()}).safeParse(req.body);
   if(!input.success)return res.status(400).json({error:input.error.flatten()});
