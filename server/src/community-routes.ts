@@ -16,7 +16,7 @@ async function verifyLocation(req:AuthedRequest,propertyId:string,unitId?:string
 }
 
 router.get('/visitors',async(req:AuthedRequest,res)=>{
-  const result=await query(`SELECT v.*,p.name property_name,u.unit_number FROM visitor_logs v JOIN properties p ON p.id=v.property_id LEFT JOIN units u ON u.id=v.unit_id WHERE v.organization_id=$1 AND (cardinality($2::uuid[])=0 OR v.property_id=ANY($2::uuid[])) ORDER BY v.checked_in_at DESC LIMIT 500`,[org(req),scope(req)]);
+  const result=await query(`SELECT v.*,p.name property_name,u.unit_number,trim(concat(ru.first_name,' ',ru.last_name)) registered_by_name,rou.role registered_by_role FROM visitor_logs v JOIN properties p ON p.id=v.property_id LEFT JOIN units u ON u.id=v.unit_id LEFT JOIN users ru ON ru.id=v.registered_by LEFT JOIN organization_users rou ON rou.user_id=ru.id AND rou.organization_id=v.organization_id WHERE v.organization_id=$1 AND (cardinality($2::uuid[])=0 OR v.property_id=ANY($2::uuid[])) ORDER BY v.checked_in_at DESC LIMIT 500`,[org(req),scope(req)]);
   res.json(result.rows);
 });
 
@@ -24,7 +24,7 @@ router.post('/visitors',requirePermission('maintenance.write'),async(req:AuthedR
   const input=z.object({propertyId:z.string().uuid(),unitId:z.string().uuid().optional(),visitorName:z.string().trim().min(2).max(120),phone:z.string().trim().max(40).optional(),vehiclePlate:z.string().trim().max(30).optional(),approvedBy:z.string().trim().max(120).optional()}).safeParse(req.body);
   if(!input.success)return res.status(400).json({error:'Complete the visitor name and property',fields:input.error.flatten().fieldErrors});
   const d=input.data;await verifyLocation(req,d.propertyId,d.unitId);
-  const result=await query(`INSERT INTO visitor_logs(organization_id,property_id,unit_id,visitor_name,phone,vehicle_plate,approved_by) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *`,[org(req),d.propertyId,d.unitId||null,d.visitorName,d.phone||null,d.vehiclePlate||null,d.approvedBy||null]);
+  const result=await query(`INSERT INTO visitor_logs(organization_id,property_id,unit_id,visitor_name,phone,vehicle_plate,approved_by,registered_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,[org(req),d.propertyId,d.unitId||null,d.visitorName,d.phone||null,d.vehiclePlate||null,d.approvedBy||null,req.auth!.userId]);
   res.status(201).json(result.rows[0]);
 });
 
