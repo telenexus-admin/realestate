@@ -11,6 +11,7 @@ import teamRouter from './team-routes.js';
 import communityRouter from './community-routes.js';
 import portalRouter from './portal-routes.js';
 import onboardingRouter from './onboarding-routes.js';
+import smsRouter from './sms-routes.js';
 import authRouter, { auth, requirePermission, type AuthedRequest } from './auth.js';
 import { provisionTenantOnboarding } from './onboarding-service.js';
 import { processEmailJobs, startEmailWorker } from './email-service.js';
@@ -42,6 +43,7 @@ app.use('/api',(req:AuthedRequest,res,next)=>req.auth?.role==='tenant'?res.statu
 app.use('/api', operatorRouter);
 app.use('/api', teamRouter);
 app.use('/api', onboardingRouter);
+app.use('/api', smsRouter);
 app.use('/api', communityRouter);
 app.use('/api', workflowRouter);
 app.use('/api', rentalRouter);

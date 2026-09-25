@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { query, withTransaction } from './db.js';
 import { requirePermission, type AuthedRequest } from './auth.js';
+import { sendOrganizationSms } from './sms-service.js';
 
 const router=Router();
 function org(req:AuthedRequest){if(!req.auth?.organizationId)throw new Error('Organization context missing');return req.auth.organizationId;}
@@ -194,9 +195,16 @@ router.post('/rental/invoices/:id/share',requirePermission('finance.write'),asyn
  const found=await query<any>(`SELECT i.id,i.invoice_number,i.total,i.due_date,rt.id tenant_id,rt.first_name,rt.phone,rt.email,u.unit_number,p.id property_id,p.name property_name FROM invoices i JOIN rental_tenants rt ON rt.id=i.tenant_id LEFT JOIN leases l ON l.id=i.lease_id LEFT JOIN units u ON u.id=l.unit_id LEFT JOIN properties p ON p.id=u.property_id WHERE i.id=$1 AND i.organization_id=$2`,[id.data,org(req)]);if(!found.rowCount)return res.status(404).json({error:'Invoice not found'});const invoice=found.rows[0];if(invoice.property_id&&!inScope(req,invoice.property_id))return res.status(403).json({error:'Invoice is outside your assigned scope'});
  const channel=input.data.channel,recipient=channel==='email'?invoice.email:invoice.phone;if(!recipient)return res.status(400).json({error:`Tenant has no ${channel==='email'?'email address':'phone number'}`});
  const message=`Hello ${invoice.first_name}, your ${invoice.property_name||'property'} bill for unit ${invoice.unit_number||'—'} is KES ${Number(invoice.total).toLocaleString()} and is due on ${new Date(invoice.due_date).toLocaleDateString('en-KE')}. Invoice ${invoice.invoice_number}.`;
- let actionUrl='';if(channel==='email')actionUrl=`mailto:${encodeURIComponent(recipient)}?subject=${encodeURIComponent(`Invoice ${invoice.invoice_number}`)}&body=${encodeURIComponent(message)}`;else{let phone=String(recipient).replace(/\D/g,'');if(phone.startsWith('0'))phone=`254${phone.slice(1)}`;actionUrl=channel==='whatsapp'?`https://wa.me/${phone}?text=${encodeURIComponent(message)}`:`sms:+${phone}?body=${encodeURIComponent(message)}`;}
- await query(`INSERT INTO invoice_communications(organization_id,invoice_id,tenant_id,channel,recipient,message,status,sent_by) VALUES($1,$2,$3,$4,$5,$6,'opened',$7)`,[org(req),id.data,invoice.tenant_id,channel,recipient,message,req.auth!.userId]);
- res.json({actionUrl,message,status:'opened'});
+ let actionUrl='',status='opened';
+ if(channel==='sms'){
+  const sent=await sendOrganizationSms({organizationId:org(req),phone:recipient,message,tenantId:invoice.tenant_id,invoiceId:id.data,category:'invoice_reminder',sentBy:req.auth!.userId});
+  status='sent';
+  await query(`INSERT INTO invoice_communications(organization_id,invoice_id,tenant_id,channel,recipient,message,status,sent_by) VALUES($1,$2,$3,'sms',$4,$5,'sent',$6)`,[org(req),id.data,invoice.tenant_id,sent.recipient,message,req.auth!.userId]);
+ }else{
+  if(channel==='email')actionUrl=`mailto:${encodeURIComponent(recipient)}?subject=${encodeURIComponent(`Invoice ${invoice.invoice_number}`)}&body=${encodeURIComponent(message)}`;else{let phone=String(recipient).replace(/\D/g,'');if(phone.startsWith('0'))phone=`254${phone.slice(1)}`;actionUrl=`https://wa.me/${phone}?text=${encodeURIComponent(message)}`;}
+  await query(`INSERT INTO invoice_communications(organization_id,invoice_id,tenant_id,channel,recipient,message,status,sent_by) VALUES($1,$2,$3,$4,$5,$6,'opened',$7)`,[org(req),id.data,invoice.tenant_id,channel,recipient,message,req.auth!.userId]);
+ }
+ res.json({actionUrl,message,status});
 });
 
 router.get('/rental/tenant/:tenantId/lifecycle',async(req:AuthedRequest,res)=>{

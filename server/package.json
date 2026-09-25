@@ -8,7 +8,8 @@
     "start": "tsx src/server.ts",
     "migrate": "tsx src/migrate.ts",
     "typecheck": "tsc --noEmit",
-    "smoke:auth": "tsx src/smoke-auth.ts"
+    "smoke:auth": "tsx src/smoke-auth.ts",
+    "smoke:sms": "tsx src/smoke-sms.ts"
   },
   "dependencies": {
     "cors": "latest",

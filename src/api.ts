@@ -31,6 +31,7 @@ export type OrganizationOnboarding={companyName:string;slug:string;companyEmail?
 export type TenantPortalData={tenant:any;balance:number;payments:any[];invoices:any[];documents:any[];tickets:any[]};
 export type OnboardingSettings={sender_name:string;reply_to_email:string;welcome_message:string;portal_base_url:string;auto_create_portal:boolean;auto_send_welcome:boolean;invoice_first_rent:boolean;invoice_deposit:boolean};
 export type OnboardingTemplate={id:string;property_id?:string|null;property_name?:string|null;document_type:string;name:string;source_type:string;file_name?:string|null;version:number;status:string;created_at:string};
+export type SmsSettings={provider:'blessed_text'|'savvy'|'talksasa';sender_id:string;partner_id?:string|null;enabled:boolean;configured_at?:string|null;has_api_key:boolean};
 
 export class ApiError extends Error{
   status:number;
@@ -182,6 +183,10 @@ export const api = {
   shareInvoice:(id:string,channel:'whatsapp'|'sms'|'email')=>request<{actionUrl:string;message:string;status:string}>(`/api/rental/invoices/${id}/share`,{method:'POST',body:JSON.stringify({channel})}),
   team:()=>request<any[]>('/api/team'),
   createCaretaker:(payload:{firstName:string;lastName:string;email:string;phone:string;temporaryPassword:string;propertyIds:string[]})=>request('/api/team/caretakers',{method:'POST',body:JSON.stringify(payload)}),
+  smsSettings:()=>request<SmsSettings>('/api/sms/settings'),
+  saveSmsSettings:(payload:{provider:string;apiKey:string;senderId:string;partnerId:string;enabled:boolean})=>request<SmsSettings>('/api/sms/settings',{method:'PUT',body:JSON.stringify(payload)}),
+  testSms:(phone:string)=>request<{sent:true;recipient:string;provider:string}>('/api/sms/test',{method:'POST',body:JSON.stringify({phone})}),
+  sendTenantSms:(payload:{audience:'all'|'tenant';tenantId?:string;message:string})=>request<{sent:number;failed:number;total:number;errors:string[]}>('/api/sms/messages',{method:'POST',body:JSON.stringify(payload)}),
   onboardingSettings:()=>request<{settings:OnboardingSettings;templates:OnboardingTemplate[]}>('/api/onboarding/settings'),
   saveOnboardingSettings:(payload:unknown)=>request('/api/onboarding/settings',{method:'PUT',body:JSON.stringify(payload)}),
   createOnboardingTemplate:(payload:unknown)=>request('/api/onboarding/templates',{method:'POST',body:JSON.stringify(payload)}),
