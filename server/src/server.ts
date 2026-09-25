@@ -152,11 +152,9 @@ app.post(
   requirePermission("property.write"),
   async (req: AuthedRequest, res) => {
     if (propertyScope(req).length > 0)
-      return res
-        .status(403)
-        .json({
-          error: "Scoped users cannot create portfolio-level properties",
-        });
+      return res.status(403).json({
+        error: "Scoped users cannot create portfolio-level properties",
+      });
     const input = z
       .object({
         name: z.string().min(2),
@@ -248,14 +246,16 @@ app.post(
 app.get("/api/tenants", async (req: AuthedRequest, res) => {
   const scope = propertyScope(req);
   const result = await query(
-    `SELECT rt.*,l.lease_number,l.monthly_rent,l.end_date,u.unit_number,p.name property_name,
+    `WITH balances AS (SELECT tenant_id,coalesce(sum(total-paid_amount) FILTER (WHERE status IN ('issued','partial','overdue')),0) balance FROM invoices WHERE organization_id=$1 GROUP BY tenant_id)
+    SELECT rt.*,home.lease_number,home.monthly_rent,home.start_date,home.end_date,home.lease_status,home.unit_number,home.property_name,
     EXISTS(SELECT 1 FROM tenant_portal_accounts tpa WHERE tpa.organization_id=rt.organization_id AND tpa.tenant_id=rt.id) portal_active,
     (SELECT ej.status FROM email_jobs ej WHERE ej.organization_id=rt.organization_id AND ej.tenant_id=rt.id AND ej.job_type='tenant_welcome' ORDER BY ej.created_at DESC LIMIT 1) welcome_status,
     (SELECT ej.sent_at FROM email_jobs ej WHERE ej.organization_id=rt.organization_id AND ej.tenant_id=rt.id AND ej.job_type='tenant_welcome' ORDER BY ej.created_at DESC LIMIT 1) welcome_sent_at,
-    coalesce(sum(i.total-i.paid_amount) FILTER (WHERE i.status IN ('issued','partial','overdue')),0) balance
-    FROM rental_tenants rt LEFT JOIN leases l ON l.tenant_id=rt.id AND l.status IN ('active','expiring')
-    LEFT JOIN units u ON u.id=l.unit_id LEFT JOIN properties p ON p.id=u.property_id LEFT JOIN invoices i ON i.tenant_id=rt.id
-    WHERE rt.organization_id=$1 AND (cardinality($2::uuid[])=0 OR p.id=ANY($2::uuid[])) GROUP BY rt.id,l.lease_number,l.monthly_rent,l.end_date,u.unit_number,p.name ORDER BY rt.first_name,rt.last_name`,
+    coalesce(b.balance,0) balance
+    FROM rental_tenants rt
+    LEFT JOIN balances b ON b.tenant_id=rt.id
+    LEFT JOIN LATERAL (SELECT l.lease_number,l.monthly_rent,l.start_date,l.end_date,l.status lease_status,u.unit_number,p.id property_id,p.name property_name FROM leases l JOIN units u ON u.id=l.unit_id JOIN properties p ON p.id=u.property_id WHERE l.organization_id=rt.organization_id AND l.tenant_id=rt.id ORDER BY CASE WHEN l.status IN ('active','expiring') THEN 0 ELSE 1 END,l.end_date DESC NULLS LAST,l.created_at DESC LIMIT 1) home ON true
+    WHERE rt.organization_id=$1 AND (cardinality($2::uuid[])=0 OR home.property_id=ANY($2::uuid[])) ORDER BY rt.first_name,rt.last_name`,
     [tenantId(req), scope],
   );
   res.json(result.rows);
@@ -304,8 +304,8 @@ app.post(
         email: z.string().trim().email(),
         nationalId: z.string().optional(),
         unitId: z.string().uuid(),
-        startDate: z.string(),
-        endDate: z.string(),
+        startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
         monthlyRent: z.number().positive(),
         depositAmount: z.number().nonnegative().default(0),
         dueDay: z.number().int().min(1).max(28).default(5),
@@ -316,12 +316,10 @@ app.post(
       })
       .safeParse(req.body);
     if (!input.success)
-      return res
-        .status(400)
-        .json({
-          error: "Complete the tenant, unit and lease details",
-          fields: input.error.flatten().fieldErrors,
-        });
+      return res.status(400).json({
+        error: "Complete the tenant, unit and lease details",
+        fields: input.error.flatten().fieldErrors,
+      });
     const d = input.data;
     if (d.endDate < d.startDate)
       return res
@@ -629,11 +627,9 @@ app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
     typeof (error as { status?: unknown }).status === "number"
       ? (error as { status: number }).status
       : 500;
-  res
-    .status(status)
-    .json({
-      error: error instanceof Error ? error.message : "Internal server error",
-    });
+  res.status(status).json({
+    error: error instanceof Error ? error.message : "Internal server error",
+  });
 });
 
 app.listen(PORT, () => {

@@ -1,142 +1,1663 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Building2, CalendarDays, CheckCircle2, ChevronDown, ChevronRight, CircleDollarSign, Download, FileBarChart, Home, KeyRound, Layers3, Mail, MapPin, Phone, Printer, Search, Upload, UserPlus, Users, WalletCards, Wrench, X } from 'lucide-react';
-import { api, getToken } from '../api';
-import { DataTable, MetricCard, ModuleHeader, Panel, Status } from '../ui';
-import './tenant-page.css';
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import {
+  AlertTriangle,
+  Building2,
+  CalendarDays,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  CircleDollarSign,
+  Download,
+  FileBarChart,
+  Home,
+  KeyRound,
+  Layers3,
+  Mail,
+  MapPin,
+  Phone,
+  Printer,
+  Search,
+  Upload,
+  UserPlus,
+  Users,
+  WalletCards,
+  Wrench,
+  X,
+} from "lucide-react";
+import { api, getToken } from "../api";
+import { DataTable, MetricCard, ModuleHeader, Panel, Status } from "../ui";
+import "./tenant-page.css";
 
-type AddPage='Properties'|'Units'|'Tenants'|'Collections'|'Maintenance';
-type QuickAddProps={page:AddPage;onClose:()=>void;onSaved:()=>void};
-type RecordRow=Record<string,any>;
-const money=(value:unknown)=>`KES ${Number(value||0).toLocaleString()}`;
-const unitTypes=[
-  ['bedsitter','Bedsitter',0],['studio','Studio',0],['one_bedroom','One bedroom',1],['two_bedroom','Two bedroom',2],['three_bedroom','Three bedroom',3],['four_plus_bedrooms','Four or more bedrooms',4],['single_room','Single room',0],['house','House',0],['shop','Shop',0],['office','Office',0],['store','Store',0],['custom','Custom type',0]
+type AddPage =
+  "Properties" | "Units" | "Tenants" | "Collections" | "Maintenance";
+type QuickAddProps = {
+  page: AddPage;
+  onClose: () => void;
+  onSaved: () => void;
+};
+type RecordRow = Record<string, any>;
+const money = (value: unknown) => `KES ${Number(value || 0).toLocaleString()}`;
+const unitTypes = [
+  ["bedsitter", "Bedsitter", 0],
+  ["studio", "Studio", 0],
+  ["one_bedroom", "One bedroom", 1],
+  ["two_bedroom", "Two bedroom", 2],
+  ["three_bedroom", "Three bedroom", 3],
+  ["four_plus_bedrooms", "Four or more bedrooms", 4],
+  ["single_room", "Single room", 0],
+  ["house", "House", 0],
+  ["shop", "Shop", 0],
+  ["office", "Office", 0],
+  ["store", "Store", 0],
+  ["custom", "Custom type", 0],
 ] as const;
-const unitTypeLabel=(value:unknown)=>unitTypes.find(([key])=>key===value)?.[1]||String(value||'Other').replace(/_/g,' ').replace(/\b\w/g,letter=>letter.toUpperCase());
+const unitTypeLabel = (value: unknown) =>
+  unitTypes.find(([key]) => key === value)?.[1] ||
+  String(value || "Other")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 
-function useRows(loader:()=>Promise<any[]>,refreshKey:number){
-  const [rows,setRows]=useState<RecordRow[]>([]),[loading,setLoading]=useState(true),[error,setError]=useState('');
-  useEffect(()=>{let active=true;setLoading(true);loader().then(data=>{if(active){setRows(data);setError('')}}).catch(err=>{if(active)setError(err instanceof Error?err.message:'Could not load data')}).finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[refreshKey]);
-  return {rows,loading,error};
+function useRows(loader: () => Promise<any[]>, refreshKey: number) {
+  const [rows, setRows] = useState<RecordRow[]>([]),
+    [loading, setLoading] = useState(true),
+    [error, setError] = useState("");
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    loader()
+      .then((data) => {
+        if (active) {
+          setRows(data);
+          setError("");
+        }
+      })
+      .catch((err) => {
+        if (active)
+          setError(err instanceof Error ? err.message : "Could not load data");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [refreshKey]);
+  return { rows, loading, error };
 }
 
-function Notice({loading,error,empty}:{loading:boolean;error:string;empty:boolean}){
-  if(loading)return <div className="overview-source-note"><span>Loading…</span></div>;
-  if(error)return <div className="overview-source-note"><AlertTriangle size={14}/><span>{error}</span></div>;
-  if(empty)return <div className="overview-source-note"><span>No records yet. Use Add to create the first one.</span></div>;
+function Notice({
+  loading,
+  error,
+  empty,
+}: {
+  loading: boolean;
+  error: string;
+  empty: boolean;
+}) {
+  if (loading)
+    return (
+      <div className="overview-source-note">
+        <span>Loading…</span>
+      </div>
+    );
+  if (error)
+    return (
+      <div className="overview-source-note">
+        <AlertTriangle size={14} />
+        <span>{error}</span>
+      </div>
+    );
+  if (empty)
+    return (
+      <div className="overview-source-note">
+        <span>No records yet. Use Add to create the first one.</span>
+      </div>
+    );
   return null;
 }
 
-export function QuickAddModal({page,onClose,onSaved}:QuickAddProps){
-  const today=new Date(),nextYear=new Date(today);nextYear.setFullYear(today.getFullYear()+1);nextYear.setDate(nextYear.getDate()-1);
-  const [form,setForm]=useState<Record<string,string>>({paymentMethod:'mpesa',priority:'medium',propertyType:'residential',unitType:'bedsitter',bedrooms:'0',startDate:today.toISOString().slice(0,10),endDate:nextYear.toISOString().slice(0,10),dueDay:'5'});
-  const [onboarding,setOnboarding]=useState({createPortal:true,sendWelcome:true,invoiceFirstRent:true,invoiceDeposit:true});
-  const [properties,setProperties]=useState<RecordRow[]>([]),[tenants,setTenants]=useState<RecordRow[]>([]),[units,setUnits]=useState<RecordRow[]>([]);
-  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[saved,setSaved]=useState(false);
-  useEffect(()=>{if(!getToken())return;Promise.all([api.properties(),api.tenants(),api.units()]).then(([p,t,u])=>{setProperties(p);setTenants(t);setUnits(u)}).catch(()=>{});if(page==='Tenants')api.onboardingSettings().then(({settings})=>setOnboarding({createPortal:settings.auto_create_portal,sendWelcome:settings.auto_send_welcome,invoiceFirstRent:settings.invoice_first_rent,invoiceDeposit:settings.invoice_deposit})).catch(()=>{})},[]);
-  const set=(name:string,value:string)=>setForm(current=>({...current,[name]:value}));
-  const field=(name:string,label:string,required=false,type='text',placeholder='')=><label><span>{label}</span><input type={type} required={required} value={form[name]||''} placeholder={placeholder} onChange={e=>set(name,e.target.value)}/></label>;
-  const propertySelect=<label><span>Property</span><select required value={form.propertyId||''} onChange={e=>set('propertyId',e.target.value)}><option value="">Choose property</option>{properties.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>;
-  async function submit(e:FormEvent){
-    e.preventDefault();setBusy(true);setError('');
-    try{
-      if(page==='Properties')await api.createProperty({name:form.name,propertyType:form.propertyType||'residential',address:form.address||undefined,city:form.city||undefined,county:form.county||undefined});
-      if(page==='Units')await api.createUnit({propertyId:form.propertyId,unitNumber:form.unitNumber,unitType:form.unitType==='custom'?form.customUnitType:form.unitType||'bedsitter',bedrooms:Number(form.bedrooms||0),marketRent:Number(form.marketRent||0),depositAmount:Number(form.depositAmount||0)});
-      if(page==='Tenants')await api.createTenancy({firstName:form.firstName,lastName:form.lastName,phone:form.phone,email:form.email,nationalId:form.nationalId||undefined,unitId:form.unitId,startDate:form.startDate,endDate:form.endDate,monthlyRent:Number(form.monthlyRent),depositAmount:Number(form.depositAmount||0),dueDay:Number(form.dueDay||5),...onboarding,sendWelcome:onboarding.createPortal&&onboarding.sendWelcome});
-      if(page==='Collections')await api.createPayment({tenantId:form.tenantId||undefined,reference:form.reference,paymentMethod:form.paymentMethod||'mpesa',amount:Number(form.amount)});
-      if(page==='Maintenance')await api.createMaintenance({propertyId:form.propertyId,unitId:form.unitId||undefined,requestNumber:`REQ-${Date.now().toString().slice(-8)}`,title:form.title,description:form.description||undefined,category:form.category||undefined,priority:form.priority||'medium'});
-      setSaved(true);onSaved();window.setTimeout(onClose,700);
-    }catch(err){setError(err instanceof Error?err.message:'Could not save')}
-    finally{setBusy(false)}
+export function QuickAddModal({ page, onClose, onSaved }: QuickAddProps) {
+  const today = new Date(),
+    nextYear = new Date(today);
+  nextYear.setFullYear(today.getFullYear() + 1);
+  nextYear.setDate(nextYear.getDate() - 1);
+  const [form, setForm] = useState<Record<string, string>>({
+    paymentMethod: "mpesa",
+    priority: "medium",
+    propertyType: "residential",
+    unitType: "bedsitter",
+    bedrooms: "0",
+    startDate: today.toISOString().slice(0, 10),
+    endDate: nextYear.toISOString().slice(0, 10),
+    dueDay: "5",
+  });
+  const [onboarding, setOnboarding] = useState({
+    createPortal: true,
+    sendWelcome: true,
+    invoiceFirstRent: true,
+    invoiceDeposit: true,
+  });
+  const [properties, setProperties] = useState<RecordRow[]>([]),
+    [tenants, setTenants] = useState<RecordRow[]>([]),
+    [units, setUnits] = useState<RecordRow[]>([]);
+  const [busy, setBusy] = useState(false),
+    [error, setError] = useState(""),
+    [saved, setSaved] = useState(false);
+  useEffect(() => {
+    if (!getToken()) return;
+    Promise.all([api.properties(), api.tenants(), api.units()])
+      .then(([p, t, u]) => {
+        setProperties(p);
+        setTenants(t);
+        setUnits(u);
+      })
+      .catch(() => {});
+    if (page === "Tenants")
+      api
+        .onboardingSettings()
+        .then(({ settings }) =>
+          setOnboarding({
+            createPortal: settings.auto_create_portal,
+            sendWelcome: settings.auto_send_welcome,
+            invoiceFirstRent: settings.invoice_first_rent,
+            invoiceDeposit: settings.invoice_deposit,
+          }),
+        )
+        .catch(() => {});
+  }, []);
+  const set = (name: string, value: string) =>
+    setForm((current) => ({ ...current, [name]: value }));
+  const field = (
+    name: string,
+    label: string,
+    required = false,
+    type = "text",
+    placeholder = "",
+  ) => (
+    <label>
+      <span>{label}</span>
+      <input
+        type={type}
+        required={required}
+        value={form[name] || ""}
+        placeholder={placeholder}
+        onChange={(e) => set(name, e.target.value)}
+      />
+    </label>
+  );
+  const propertySelect = (
+    <label>
+      <span>Property</span>
+      <select
+        required
+        value={form.propertyId || ""}
+        onChange={(e) => set("propertyId", e.target.value)}
+      >
+        <option value="">Choose property</option>
+        {properties.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.name}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      if (page === "Properties")
+        await api.createProperty({
+          name: form.name,
+          propertyType: form.propertyType || "residential",
+          address: form.address || undefined,
+          city: form.city || undefined,
+          county: form.county || undefined,
+        });
+      if (page === "Units")
+        await api.createUnit({
+          propertyId: form.propertyId,
+          unitNumber: form.unitNumber,
+          unitType:
+            form.unitType === "custom"
+              ? form.customUnitType
+              : form.unitType || "bedsitter",
+          bedrooms: Number(form.bedrooms || 0),
+          marketRent: Number(form.marketRent || 0),
+          depositAmount: Number(form.depositAmount || 0),
+        });
+      if (page === "Tenants")
+        await api.createTenancy({
+          firstName: form.firstName,
+          lastName: form.lastName,
+          phone: form.phone,
+          email: form.email,
+          nationalId: form.nationalId || undefined,
+          unitId: form.unitId,
+          startDate: form.startDate,
+          endDate: form.endDate,
+          monthlyRent: Number(form.monthlyRent),
+          depositAmount: Number(form.depositAmount || 0),
+          dueDay: Number(form.dueDay || 5),
+          ...onboarding,
+          sendWelcome: onboarding.createPortal && onboarding.sendWelcome,
+        });
+      if (page === "Collections")
+        await api.createPayment({
+          tenantId: form.tenantId || undefined,
+          reference: form.reference,
+          paymentMethod: form.paymentMethod || "mpesa",
+          amount: Number(form.amount),
+        });
+      if (page === "Maintenance")
+        await api.createMaintenance({
+          propertyId: form.propertyId,
+          unitId: form.unitId || undefined,
+          requestNumber: `REQ-${Date.now().toString().slice(-8)}`,
+          title: form.title,
+          description: form.description || undefined,
+          category: form.category || undefined,
+          priority: form.priority || "medium",
+        });
+      setSaved(true);
+      onSaved();
+      window.setTimeout(onClose, 700);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save");
+    } finally {
+      setBusy(false);
+    }
   }
-  const relevantUnits=useMemo(()=>units.filter(u=>(!form.propertyId||u.property_id===form.propertyId)&&u.status!=='occupied'),[units,form.propertyId]);
-  return <div className="modal-backdrop"><form className="modal" onSubmit={submit}><div className="modal-head"><div><span className="panel-kicker">Add new</span><h2>{page==='Collections'?'Record payment':page==='Maintenance'?'Add repair request':`Add ${page.slice(0,-1).toLowerCase()}`}</h2></div><button type="button" className="icon-button" onClick={onClose}><X size={17}/></button></div>{saved?<div className="success-state"><CheckCircle2 size={28}/><strong>{page==='Tenants'?'Tenant created and welcome queued':'Saved'}</strong><span>{page==='Tenants'?'Portal access, documents and invoices are being sent by email.':'The new record is now in the system.'}</span></div>:<><div className="form-grid">
-    {page==='Properties'&&<>{field('name','Property name',true,'text','e.g. Greenview Apartments')}<label><span>Type</span><select value={form.propertyType} onChange={e=>set('propertyType',e.target.value)}><option value="residential">Residential</option><option value="commercial">Commercial</option><option value="mixed-use">Mixed use</option></select></label>{field('address','Address')}{field('city','Town / city')}{field('county','County')}</>}
-    {page==='Units'&&<>{propertySelect}{field('unitNumber','Unit number',true)}<label><span>Unit type</span><select value={form.unitType} onChange={e=>{const selected=unitTypes.find(([key])=>key===e.target.value);setForm(current=>({...current,unitType:e.target.value,bedrooms:String(selected?.[2]||0)}))}}>{unitTypes.map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label>{form.unitType==='custom'&&field('customUnitType','Custom unit type',true,'text','e.g. Maisonette')}{field('bedrooms','Bedrooms',true,'number')}{field('marketRent','Monthly rent',true,'number','KES')}{field('depositAmount','Deposit',false,'number','KES')}</>}
-    {page==='Tenants'&&<>{field('firstName','First name',true)}{field('lastName','Last name',true)}{field('phone','Phone number',true,'tel','07…')}{field('email','Email',true,'email')}{field('nationalId','National ID')}{propertySelect}<label><span>Vacant unit</span><select required value={form.unitId||''} onChange={e=>{const unit=units.find(u=>u.id===e.target.value);set('unitId',e.target.value);if(unit&&!form.monthlyRent)set('monthlyRent',String(unit.market_rent||''))}}><option value="">Choose unit</option>{relevantUnits.map(u=><option key={u.id} value={u.id}>{u.unit_number}</option>)}</select></label>{field('monthlyRent','Monthly rent',true,'number','KES')}{field('depositAmount','Deposit',false,'number','KES')}{field('startDate','Lease starts',true,'date')}{field('endDate','Lease ends',true,'date')}{field('dueDay','Rent due day',true,'number','1–28')}<div className="full tenant-onboarding-options"><strong>Tenant welcome pack</strong><label><input type="checkbox" checked={onboarding.createPortal} onChange={e=>setOnboarding(v=>({...v,createPortal:e.target.checked}))}/><span>Create portal account and secure activation link</span></label><label><input type="checkbox" disabled={!onboarding.createPortal} checked={onboarding.sendWelcome} onChange={e=>setOnboarding(v=>({...v,sendWelcome:e.target.checked}))}/><span>Email the agreement, invoices and login instructions</span></label><label><input type="checkbox" checked={onboarding.invoiceFirstRent} onChange={e=>setOnboarding(v=>({...v,invoiceFirstRent:e.target.checked}))}/><span>Create first-rent invoice</span></label><label><input type="checkbox" checked={onboarding.invoiceDeposit} onChange={e=>setOnboarding(v=>({...v,invoiceDeposit:e.target.checked}))}/><span>Create deposit invoice when a deposit is entered</span></label></div></>}
-    {page==='Collections'&&<><label><span>Tenant</span><select value={form.tenantId||''} onChange={e=>set('tenantId',e.target.value)}><option value="">Unmatched / choose later</option>{tenants.map(t=><option key={t.id} value={t.id}>{t.first_name} {t.last_name}</option>)}</select></label>{field('reference','Payment reference',true)}{field('amount','Amount',true,'number','KES')}<label><span>Payment method</span><select value={form.paymentMethod} onChange={e=>set('paymentMethod',e.target.value)}><option value="mpesa">M-Pesa</option><option value="bank">Bank</option><option value="cash">Cash</option><option value="card">Card</option><option value="cheque">Cheque</option></select></label></>}
-    {page==='Maintenance'&&<>{propertySelect}<label><span>Unit (optional)</span><select value={form.unitId||''} onChange={e=>set('unitId',e.target.value)}><option value="">Whole property</option>{relevantUnits.map(u=><option key={u.id} value={u.id}>{u.unit_number}</option>)}</select></label>{field('title','Problem',true,'text','e.g. Leaking kitchen tap')}{field('category','Category')}<label><span>Priority</span><select value={form.priority} onChange={e=>set('priority',e.target.value)}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="urgent">Urgent</option></select></label><label className="full"><span>Description</span><textarea rows={4} value={form.description||''} onChange={e=>set('description',e.target.value)} placeholder="Add useful details"/></label></>}
-  </div>{error&&<div className="auth-error">{error}</div>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancel</button><button disabled={busy} type="submit" className="primary-button">{busy?'Saving…':'Save'}</button></div></>}</form></div>;
+  const relevantUnits = useMemo(
+    () =>
+      units.filter(
+        (u) =>
+          (!form.propertyId || u.property_id === form.propertyId) &&
+          u.status !== "occupied",
+      ),
+    [units, form.propertyId],
+  );
+  return (
+    <div className="modal-backdrop">
+      <form className="modal" onSubmit={submit}>
+        <div className="modal-head">
+          <div>
+            <span className="panel-kicker">Add new</span>
+            <h2>
+              {page === "Collections"
+                ? "Record payment"
+                : page === "Maintenance"
+                  ? "Add repair request"
+                  : `Add ${page.slice(0, -1).toLowerCase()}`}
+            </h2>
+          </div>
+          <button type="button" className="icon-button" onClick={onClose}>
+            <X size={17} />
+          </button>
+        </div>
+        {saved ? (
+          <div className="success-state">
+            <CheckCircle2 size={28} />
+            <strong>
+              {page === "Tenants"
+                ? "Tenant created and welcome queued"
+                : "Saved"}
+            </strong>
+            <span>
+              {page === "Tenants"
+                ? "Portal access, documents and invoices are being sent by email."
+                : "The new record is now in the system."}
+            </span>
+          </div>
+        ) : (
+          <>
+            <div className="form-grid">
+              {page === "Properties" && (
+                <>
+                  {field(
+                    "name",
+                    "Property name",
+                    true,
+                    "text",
+                    "e.g. Greenview Apartments",
+                  )}
+                  <label>
+                    <span>Type</span>
+                    <select
+                      value={form.propertyType}
+                      onChange={(e) => set("propertyType", e.target.value)}
+                    >
+                      <option value="residential">Residential</option>
+                      <option value="commercial">Commercial</option>
+                      <option value="mixed-use">Mixed use</option>
+                    </select>
+                  </label>
+                  {field("address", "Address")}
+                  {field("city", "Town / city")}
+                  {field("county", "County")}
+                </>
+              )}
+              {page === "Units" && (
+                <>
+                  {propertySelect}
+                  {field("unitNumber", "Unit number", true)}
+                  <label>
+                    <span>Unit type</span>
+                    <select
+                      value={form.unitType}
+                      onChange={(e) => {
+                        const selected = unitTypes.find(
+                          ([key]) => key === e.target.value,
+                        );
+                        setForm((current) => ({
+                          ...current,
+                          unitType: e.target.value,
+                          bedrooms: String(selected?.[2] || 0),
+                        }));
+                      }}
+                    >
+                      {unitTypes.map(([value, label]) => (
+                        <option key={value} value={value}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {form.unitType === "custom" &&
+                    field(
+                      "customUnitType",
+                      "Custom unit type",
+                      true,
+                      "text",
+                      "e.g. Maisonette",
+                    )}
+                  {field("bedrooms", "Bedrooms", true, "number")}
+                  {field("marketRent", "Monthly rent", true, "number", "KES")}
+                  {field("depositAmount", "Deposit", false, "number", "KES")}
+                </>
+              )}
+              {page === "Tenants" && (
+                <>
+                  {field("firstName", "First name", true)}
+                  {field("lastName", "Last name", true)}
+                  {field("phone", "Phone number", true, "tel", "07…")}
+                  {field("email", "Email", true, "email")}
+                  {field("nationalId", "National ID")}
+                  {propertySelect}
+                  <label>
+                    <span>Vacant unit</span>
+                    <select
+                      required
+                      value={form.unitId || ""}
+                      onChange={(e) => {
+                        const unit = units.find((u) => u.id === e.target.value);
+                        set("unitId", e.target.value);
+                        if (unit && !form.monthlyRent)
+                          set("monthlyRent", String(unit.market_rent || ""));
+                      }}
+                    >
+                      <option value="">Choose unit</option>
+                      {relevantUnits.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.unit_number}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {field("monthlyRent", "Monthly rent", true, "number", "KES")}
+                  {field("depositAmount", "Deposit", false, "number", "KES")}
+                  {field("startDate", "Lease starts", true, "date")}
+                  {field("endDate", "Lease ends", true, "date")}
+                  {field("dueDay", "Rent due day", true, "number", "1–28")}
+                  <div className="full tenant-onboarding-options">
+                    <strong>Tenant welcome pack</strong>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={onboarding.createPortal}
+                        onChange={(e) =>
+                          setOnboarding((v) => ({
+                            ...v,
+                            createPortal: e.target.checked,
+                          }))
+                        }
+                      />
+                      <span>
+                        Create portal account and secure activation link
+                      </span>
+                    </label>
+                    <label>
+                      <input
+                        type="checkbox"
+                        disabled={!onboarding.createPortal}
+                        checked={onboarding.sendWelcome}
+                        onChange={(e) =>
+                          setOnboarding((v) => ({
+                            ...v,
+                            sendWelcome: e.target.checked,
+                          }))
+                        }
+                      />
+                      <span>
+                        Email the agreement, invoices and login instructions
+                      </span>
+                    </label>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={onboarding.invoiceFirstRent}
+                        onChange={(e) =>
+                          setOnboarding((v) => ({
+                            ...v,
+                            invoiceFirstRent: e.target.checked,
+                          }))
+                        }
+                      />
+                      <span>Create first-rent invoice</span>
+                    </label>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={onboarding.invoiceDeposit}
+                        onChange={(e) =>
+                          setOnboarding((v) => ({
+                            ...v,
+                            invoiceDeposit: e.target.checked,
+                          }))
+                        }
+                      />
+                      <span>
+                        Create deposit invoice when a deposit is entered
+                      </span>
+                    </label>
+                  </div>
+                </>
+              )}
+              {page === "Collections" && (
+                <>
+                  <label>
+                    <span>Tenant</span>
+                    <select
+                      value={form.tenantId || ""}
+                      onChange={(e) => set("tenantId", e.target.value)}
+                    >
+                      <option value="">Unmatched / choose later</option>
+                      {tenants.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.first_name} {t.last_name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {field("reference", "Payment reference", true)}
+                  {field("amount", "Amount", true, "number", "KES")}
+                  <label>
+                    <span>Payment method</span>
+                    <select
+                      value={form.paymentMethod}
+                      onChange={(e) => set("paymentMethod", e.target.value)}
+                    >
+                      <option value="mpesa">M-Pesa</option>
+                      <option value="bank">Bank</option>
+                      <option value="cash">Cash</option>
+                      <option value="card">Card</option>
+                      <option value="cheque">Cheque</option>
+                    </select>
+                  </label>
+                </>
+              )}
+              {page === "Maintenance" && (
+                <>
+                  {propertySelect}
+                  <label>
+                    <span>Unit (optional)</span>
+                    <select
+                      value={form.unitId || ""}
+                      onChange={(e) => set("unitId", e.target.value)}
+                    >
+                      <option value="">Whole property</option>
+                      {relevantUnits.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.unit_number}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {field(
+                    "title",
+                    "Problem",
+                    true,
+                    "text",
+                    "e.g. Leaking kitchen tap",
+                  )}
+                  {field("category", "Category")}
+                  <label>
+                    <span>Priority</span>
+                    <select
+                      value={form.priority}
+                      onChange={(e) => set("priority", e.target.value)}
+                    >
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                      <option value="urgent">Urgent</option>
+                    </select>
+                  </label>
+                  <label className="full">
+                    <span>Description</span>
+                    <textarea
+                      rows={4}
+                      value={form.description || ""}
+                      onChange={(e) => set("description", e.target.value)}
+                      placeholder="Add useful details"
+                    />
+                  </label>
+                </>
+              )}
+            </div>
+            {error && <div className="auth-error">{error}</div>}
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={onClose}
+              >
+                Cancel
+              </button>
+              <button disabled={busy} type="submit" className="primary-button">
+                {busy ? "Saving…" : "Save"}
+              </button>
+            </div>
+          </>
+        )}
+      </form>
+    </div>
+  );
 }
 
-export function SimplePropertiesPage({onAdd,refreshKey}:{onAdd:()=>void;refreshKey:number}){
-  const {rows,loading,error}=useRows(api.properties,refreshKey);
-  return <><ModuleHeader page="Properties" onAdd={onAdd}/><Notice loading={loading} error={error} empty={!rows.length}/><div className="metric-grid four"><MetricCard label="Properties" value={String(rows.length)} note="Active properties" icon={Building2}/><MetricCard label="Total units" value={String(rows.reduce((n,p)=>n+Number(p.unit_count||0),0))} note="Across all properties" icon={Layers3}/><MetricCard label="Occupied" value={String(rows.reduce((n,p)=>n+Number(p.occupied_count||0),0))} note="Units with tenants" icon={Home} tone="success"/><MetricCard label="Needs attention" value={String(rows.filter(p=>p.status!=='active').length)} note="Inactive properties" icon={AlertTriangle} tone="danger"/></div><Panel title="All properties" kicker="Property list"><DataTable headers={['Property','Location','Type','Units','Occupied','Status']} rows={rows.map(p=>[p.name,[p.address,p.city].filter(Boolean).join(', ')||'—',p.property_type||'—',p.unit_count||0,p.occupied_count||0,<Status value={p.status||'active'}/>])}/></Panel></>;
+export function SimplePropertiesPage({
+  onAdd,
+  refreshKey,
+}: {
+  onAdd: () => void;
+  refreshKey: number;
+}) {
+  const { rows, loading, error } = useRows(api.properties, refreshKey);
+  return (
+    <>
+      <ModuleHeader page="Properties" onAdd={onAdd} />
+      <Notice loading={loading} error={error} empty={!rows.length} />
+      <div className="metric-grid four">
+        <MetricCard
+          label="Properties"
+          value={String(rows.length)}
+          note="Active properties"
+          icon={Building2}
+        />
+        <MetricCard
+          label="Total units"
+          value={String(
+            rows.reduce((n, p) => n + Number(p.unit_count || 0), 0),
+          )}
+          note="Across all properties"
+          icon={Layers3}
+        />
+        <MetricCard
+          label="Occupied"
+          value={String(
+            rows.reduce((n, p) => n + Number(p.occupied_count || 0), 0),
+          )}
+          note="Units with tenants"
+          icon={Home}
+          tone="success"
+        />
+        <MetricCard
+          label="Needs attention"
+          value={String(rows.filter((p) => p.status !== "active").length)}
+          note="Inactive properties"
+          icon={AlertTriangle}
+          tone="danger"
+        />
+      </div>
+      <Panel title="All properties" kicker="Property list">
+        <DataTable
+          headers={[
+            "Property",
+            "Location",
+            "Type",
+            "Units",
+            "Occupied",
+            "Status",
+          ]}
+          rows={rows.map((p) => [
+            p.name,
+            [p.address, p.city].filter(Boolean).join(", ") || "—",
+            p.property_type || "—",
+            p.unit_count || 0,
+            p.occupied_count || 0,
+            <Status value={p.status || "active"} />,
+          ])}
+        />
+      </Panel>
+    </>
+  );
 }
 
-export function SimpleUnitsPage({onAdd,refreshKey}:{onAdd:()=>void;refreshKey:number}){
-  const {rows,loading,error}=useRows(api.units,refreshKey);const occupied=rows.filter(u=>u.status==='occupied').length;
-  return <><ModuleHeader page="Units" onAdd={onAdd}/><Notice loading={loading} error={error} empty={!rows.length}/><div className="metric-grid four"><MetricCard label="Total units" value={String(rows.length)} note="All active units" icon={Layers3}/><MetricCard label="Occupied" value={String(occupied)} note="Units with tenants" icon={Home} tone="success"/><MetricCard label="Vacant" value={String(rows.filter(u=>u.status==='vacant').length)} note="Ready to rent" icon={Home} tone="info"/><MetricCard label="Monthly rent" value={money(rows.reduce((n,u)=>n+Number(u.current_rent||u.market_rent||0),0))} note="Current and market rent" icon={WalletCards}/></div><Panel title="All units" kicker="Unit list"><DataTable headers={['Unit','Property','Type','Tenant','Rent','Status']} rows={rows.map(u=>[u.unit_number,u.property_name,unitTypeLabel(u.unit_type),u.tenant_name||'—',money(u.current_rent||u.market_rent),<Status value={u.status||'vacant'}/>])}/></Panel></>;
+export function SimpleUnitsPage({
+  onAdd,
+  refreshKey,
+}: {
+  onAdd: () => void;
+  refreshKey: number;
+}) {
+  const { rows, loading, error } = useRows(api.units, refreshKey);
+  const occupied = rows.filter((u) => u.status === "occupied").length;
+  return (
+    <>
+      <ModuleHeader page="Units" onAdd={onAdd} />
+      <Notice loading={loading} error={error} empty={!rows.length} />
+      <div className="metric-grid four">
+        <MetricCard
+          label="Total units"
+          value={String(rows.length)}
+          note="All active units"
+          icon={Layers3}
+        />
+        <MetricCard
+          label="Occupied"
+          value={String(occupied)}
+          note="Units with tenants"
+          icon={Home}
+          tone="success"
+        />
+        <MetricCard
+          label="Vacant"
+          value={String(rows.filter((u) => u.status === "vacant").length)}
+          note="Ready to rent"
+          icon={Home}
+          tone="info"
+        />
+        <MetricCard
+          label="Monthly rent"
+          value={money(
+            rows.reduce(
+              (n, u) => n + Number(u.current_rent || u.market_rent || 0),
+              0,
+            ),
+          )}
+          note="Current and market rent"
+          icon={WalletCards}
+        />
+      </div>
+      <Panel title="All units" kicker="Unit list">
+        <DataTable
+          headers={["Unit", "Property", "Type", "Tenant", "Rent", "Status"]}
+          rows={rows.map((u) => [
+            u.unit_number,
+            u.property_name,
+            unitTypeLabel(u.unit_type),
+            u.tenant_name || "—",
+            money(u.current_rent || u.market_rent),
+            <Status value={u.status || "vacant"} />,
+          ])}
+        />
+      </Panel>
+    </>
+  );
 }
 
-export function SimpleTenantsPage({onAdd,refreshKey}:{onAdd:()=>void;refreshKey:number}){
-  const {rows,loading,error}=useRows(api.tenants,refreshKey);
-  const [query,setQuery]=useState(''),[property,setProperty]=useState(''),[openSection,setOpenSection]=useState<'due'|'all'|null>('due');
-  const [portalTenant,setPortalTenant]=useState<RecordRow|null>(null),[portalCreated,setPortalCreated]=useState<string[]>([]);
-  const owing=rows.filter(t=>Number(t.balance)>0);
-  const properties=useMemo(()=>Array.from(new Set(rows.map(t=>String(t.property_name||'')).filter(Boolean))).sort(),[rows]);
-  const visible=useMemo(()=>rows.filter(tenant=>{
-    const text=`${tenant.first_name||''} ${tenant.last_name||''} ${tenant.phone||''} ${tenant.email||''} ${tenant.property_name||''} ${tenant.unit_number||''}`.toLowerCase();
-    return (!query||text.includes(query.toLowerCase()))&&(!property||tenant.property_name===property);
-  }),[rows,query,property]);
-  const dueVisible=visible.filter(tenant=>Number(tenant.balance)>0);
-  const initials=(tenant:RecordRow)=>`${String(tenant.first_name||'').charAt(0)}${String(tenant.last_name||'').charAt(0)}`.toUpperCase()||'T';
-  const tenantList=(items:RecordRow[],emptyTitle:string,emptyText:string)=><>
-    <div className="tenant-list-head"><span>Tenant</span><span>Home</span><span>Contact</span><span>Lease</span><span>Balance</span></div>
-    <div className="tenant-list">{items.map(tenant=><article key={tenant.id} className={Number(tenant.balance)>0?'owes':''}>
-      <div className="tenant-person"><span className="tenant-avatar">{initials(tenant)}</span><span><strong>{tenant.first_name} {tenant.last_name}</strong><small>{tenant.national_id?`ID ${tenant.national_id}`:'Tenant record'}{tenant.welcome_status?` · Welcome ${tenant.welcome_status}`:''}</small><button className={(tenant.portal_active||portalCreated.includes(tenant.id))?'tenant-portal-action active':'tenant-portal-action'} onClick={()=>setPortalTenant(tenant)}><KeyRound size={11}/>{tenant.portal_active||portalCreated.includes(tenant.id)?'Manage portal':'Create portal access'}</button></span></div>
-      <div className="tenant-home"><Home size={15}/><span><strong>{tenant.property_name||'No property'}</strong><small>{tenant.unit_number?`Unit ${tenant.unit_number}`:'No active unit'}</small></span></div>
-      <div className="tenant-contact"><a href={tenant.phone?`tel:${tenant.phone}`:undefined}><Phone size={14}/><span>{tenant.phone||'No phone'}</span></a>{tenant.email&&<a href={`mailto:${tenant.email}`}><Mail size={14}/><span>{tenant.email}</span></a>}</div>
-      <div className="tenant-lease"><CalendarDays size={15}/><span><strong>{money(tenant.monthly_rent)} / month</strong><small>{tenant.end_date?`Ends ${new Date(tenant.end_date).toLocaleDateString('en-KE',{day:'numeric',month:'short',year:'numeric'})}`:'No active lease'}</small></span></div>
-      <div className="tenant-balance"><span className={Number(tenant.balance)>0?'due':'clear'}>{Number(tenant.balance)>0?'Balance due':'Up to date'}</span><strong>{money(tenant.balance)}</strong></div>
-    </article>)}{!loading&&!items.length&&<div className="tenant-empty"><Users size={25}/><strong>{emptyTitle}</strong><span>{emptyText}</span></div>}</div>
-  </>;
-  return <div className="tenant-workspace">
-    <section className="tenant-simple-head"><div><span className="panel-kicker">TENANTS</span><h1>Tenant list</h1><p>{rows.length} tenant{rows.length===1?'':'s'} · {owing.length} with rent due</p></div><button className="tenant-add-icon" onClick={onAdd} aria-label="Add tenant" title="Add tenant"><UserPlus size={18}/></button></section>
-    <Notice loading={loading} error={error} empty={!rows.length}/>
-    <section className="tenant-directory tenant-directory-simple">
-      <div className="tenant-tools"><label className="tenant-search"><Search size={16}/><input value={query} onChange={event=>setQuery(event.target.value)} placeholder="Search tenants"/></label><select aria-label="Filter tenants by property" value={property} onChange={event=>setProperty(event.target.value)}><option value="">All properties</option>{properties.map(name=><option key={name}>{name}</option>)}</select></div>
-      <section className={openSection==='due'?'tenant-collapse open':'tenant-collapse'}><button className="tenant-collapse-button" onClick={()=>setOpenSection(current=>current==='due'?null:'due')} aria-expanded={openSection==='due'}>{openSection==='due'?<ChevronDown size={17}/>:<ChevronRight size={17}/>}<span><strong>Tenants who are due</strong><small>Outstanding rent or bills</small></span><em>{owing.length}</em></button>{openSection==='due'&&<div className="tenant-collapse-body">{tenantList(dueVisible,'No tenants are due','Everyone is currently up to date.')}</div>}</section>
-      <section className={openSection==='all'?'tenant-collapse open':'tenant-collapse'}><button className="tenant-collapse-button" onClick={()=>setOpenSection(current=>current==='all'?null:'all')} aria-expanded={openSection==='all'}>{openSection==='all'?<ChevronDown size={17}/>:<ChevronRight size={17}/>}<span><strong>All tenants</strong><small>Complete tenant list</small></span><em>{rows.length}</em></button>{openSection==='all'&&<div className="tenant-collapse-body">{tenantList(visible,'No tenants found','Try a different search or property.')}</div>}</section>
-    </section>{portalTenant&&<TenantPortalAccessModal tenant={portalTenant} active={Boolean(portalTenant.portal_active||portalCreated.includes(portalTenant.id))} onClose={()=>setPortalTenant(null)} onCreated={()=>setPortalCreated(ids=>[...ids,portalTenant.id])}/>}
-  </div>;
+export function SimpleTenantsPage({
+  onAdd,
+  refreshKey,
+}: {
+  onAdd: () => void;
+  refreshKey: number;
+}) {
+  const { rows, loading, error } = useRows(api.tenants, refreshKey);
+  const [query, setQuery] = useState(""),
+    [property, setProperty] = useState(""),
+    [openSection, setOpenSection] = useState<"due" | "all" | null>("due");
+  const [portalTenant, setPortalTenant] = useState<RecordRow | null>(null),
+    [portalCreated, setPortalCreated] = useState<string[]>([]);
+  const owing = rows.filter((t) => Number(t.balance) > 0);
+  const properties = useMemo(
+    () =>
+      Array.from(
+        new Set(rows.map((t) => String(t.property_name || "")).filter(Boolean)),
+      ).sort(),
+    [rows],
+  );
+  const visible = useMemo(
+    () =>
+      rows.filter((tenant) => {
+        const text =
+          `${tenant.first_name || ""} ${tenant.last_name || ""} ${tenant.phone || ""} ${tenant.email || ""} ${tenant.property_name || ""} ${tenant.unit_number || ""}`.toLowerCase();
+        return (
+          (!query || text.includes(query.toLowerCase())) &&
+          (!property || tenant.property_name === property)
+        );
+      }),
+    [rows, query, property],
+  );
+  const dueVisible = visible.filter((tenant) => Number(tenant.balance) > 0);
+  const initials = (tenant: RecordRow) =>
+    `${String(tenant.first_name || "").charAt(0)}${String(tenant.last_name || "").charAt(0)}`.toUpperCase() ||
+    "T";
+  const tenantList = (
+    items: RecordRow[],
+    emptyTitle: string,
+    emptyText: string,
+  ) => (
+    <>
+      <div className="tenant-list-head">
+        <span>Tenant</span>
+        <span>Home</span>
+        <span>Contact</span>
+        <span>Lease</span>
+        <span>Balance</span>
+      </div>
+      <div className="tenant-list">
+        {items.map((tenant) => (
+          <article
+            key={tenant.id}
+            className={Number(tenant.balance) > 0 ? "owes" : ""}
+          >
+            <div className="tenant-person">
+              <span className="tenant-avatar">{initials(tenant)}</span>
+              <span>
+                <strong>
+                  {tenant.first_name} {tenant.last_name}
+                </strong>
+                <small>
+                  {tenant.national_id
+                    ? `ID ${tenant.national_id}`
+                    : "Tenant record"}
+                  {tenant.welcome_status
+                    ? ` · Welcome ${tenant.welcome_status}`
+                    : ""}
+                </small>
+                <button
+                  className={
+                    tenant.portal_active || portalCreated.includes(tenant.id)
+                      ? "tenant-portal-action active"
+                      : "tenant-portal-action"
+                  }
+                  onClick={() => setPortalTenant(tenant)}
+                >
+                  <KeyRound size={11} />
+                  {tenant.portal_active || portalCreated.includes(tenant.id)
+                    ? "Manage portal"
+                    : "Create portal access"}
+                </button>
+              </span>
+            </div>
+            <div className="tenant-home">
+              <Home size={15} />
+              <span>
+                <strong>{tenant.property_name || "No property"}</strong>
+                <small>
+                  {tenant.unit_number
+                    ? `Unit ${tenant.unit_number}`
+                    : "No active unit"}
+                </small>
+              </span>
+            </div>
+            <div className="tenant-contact">
+              <a href={tenant.phone ? `tel:${tenant.phone}` : undefined}>
+                <Phone size={14} />
+                <span>{tenant.phone || "No phone"}</span>
+              </a>
+              {tenant.email && (
+                <a href={`mailto:${tenant.email}`}>
+                  <Mail size={14} />
+                  <span>{tenant.email}</span>
+                </a>
+              )}
+            </div>
+            <div className="tenant-lease">
+              <CalendarDays size={15} />
+              <span>
+                <strong>{money(tenant.monthly_rent)} / month</strong>
+                <small>
+                  {tenant.end_date
+                    ? `Lease ends ${new Date(tenant.end_date).toLocaleDateString("en-KE", { day: "numeric", month: "short", year: "numeric" })}`
+                    : "Lease end not recorded"}
+                </small>
+              </span>
+            </div>
+            <div className="tenant-balance">
+              <span className={Number(tenant.balance) > 0 ? "due" : "clear"}>
+                {Number(tenant.balance) > 0 ? "Balance due" : "Up to date"}
+              </span>
+              <strong>{money(tenant.balance)}</strong>
+            </div>
+          </article>
+        ))}
+        {!loading && !items.length && (
+          <div className="tenant-empty">
+            <Users size={25} />
+            <strong>{emptyTitle}</strong>
+            <span>{emptyText}</span>
+          </div>
+        )}
+      </div>
+    </>
+  );
+  return (
+    <div className="tenant-workspace">
+      <section className="tenant-simple-head">
+        <div>
+          <span className="panel-kicker">TENANTS</span>
+          <h1>Tenant list</h1>
+          <p>
+            {rows.length} tenant{rows.length === 1 ? "" : "s"} · {owing.length}{" "}
+            with rent due
+          </p>
+        </div>
+        <button
+          className="tenant-add-icon"
+          onClick={onAdd}
+          aria-label="Add tenant"
+          title="Add tenant"
+        >
+          <UserPlus size={18} />
+        </button>
+      </section>
+      <Notice loading={loading} error={error} empty={!rows.length} />
+      <section className="tenant-directory tenant-directory-simple">
+        <div className="tenant-tools">
+          <label className="tenant-search">
+            <Search size={16} />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search tenants"
+            />
+          </label>
+          <select
+            aria-label="Filter tenants by property"
+            value={property}
+            onChange={(event) => setProperty(event.target.value)}
+          >
+            <option value="">All properties</option>
+            {properties.map((name) => (
+              <option key={name}>{name}</option>
+            ))}
+          </select>
+        </div>
+        <section
+          className={
+            openSection === "due" ? "tenant-collapse open" : "tenant-collapse"
+          }
+        >
+          <button
+            className="tenant-collapse-button"
+            onClick={() =>
+              setOpenSection((current) => (current === "due" ? null : "due"))
+            }
+            aria-expanded={openSection === "due"}
+          >
+            {openSection === "due" ? (
+              <ChevronDown size={17} />
+            ) : (
+              <ChevronRight size={17} />
+            )}
+            <span>
+              <strong>Tenants who are due</strong>
+              <small>Outstanding rent or bills</small>
+            </span>
+            <em>{owing.length}</em>
+          </button>
+          {openSection === "due" && (
+            <div className="tenant-collapse-body">
+              {tenantList(
+                dueVisible,
+                "No tenants are due",
+                "Everyone is currently up to date.",
+              )}
+            </div>
+          )}
+        </section>
+        <section
+          className={
+            openSection === "all" ? "tenant-collapse open" : "tenant-collapse"
+          }
+        >
+          <button
+            className="tenant-collapse-button"
+            onClick={() =>
+              setOpenSection((current) => (current === "all" ? null : "all"))
+            }
+            aria-expanded={openSection === "all"}
+          >
+            {openSection === "all" ? (
+              <ChevronDown size={17} />
+            ) : (
+              <ChevronRight size={17} />
+            )}
+            <span>
+              <strong>All tenants</strong>
+              <small>Complete tenant list</small>
+            </span>
+            <em>{rows.length}</em>
+          </button>
+          {openSection === "all" && (
+            <div className="tenant-collapse-body">
+              {tenantList(
+                visible,
+                "No tenants found",
+                "Try a different search or property.",
+              )}
+            </div>
+          )}
+        </section>
+      </section>
+      {portalTenant && (
+        <TenantPortalAccessModal
+          tenant={portalTenant}
+          active={Boolean(
+            portalTenant.portal_active ||
+            portalCreated.includes(portalTenant.id),
+          )}
+          onClose={() => setPortalTenant(null)}
+          onCreated={() => setPortalCreated((ids) => [...ids, portalTenant.id])}
+        />
+      )}
+    </div>
+  );
 }
 
-function TenantPortalAccessModal({tenant,active,onClose,onCreated}:{tenant:RecordRow;active:boolean;onClose:()=>void;onCreated:()=>void}){
-  const randomPassword=useMemo(()=>`Home-${crypto.getRandomValues(new Uint32Array(1))[0].toString(36)}!9A`,[]);
-  const [email,setEmail]=useState(String(tenant.email||'')),[password,setPassword]=useState(randomPassword),[busy,setBusy]=useState(false),[error,setError]=useState(''),[saved,setSaved]=useState(false);
-  const [file,setFile]=useState<File|null>(null),[uploaded,setUploaded]=useState(false),[resent,setResent]=useState(false);
-  async function submit(event:FormEvent){event.preventDefault();setBusy(true);setError('');try{await api.createTenantPortal({tenantId:tenant.id,email,temporaryPassword:password});setSaved(true);onCreated()}catch(err){setError(err instanceof Error?err.message:'Could not create portal access')}finally{setBusy(false)}}
-  async function uploadDocument(event:FormEvent){event.preventDefault();if(!file)return;setBusy(true);setError('');try{const bytes=new Uint8Array(await file.arrayBuffer());let binary='';for(let index=0;index<bytes.length;index+=32768)binary+=String.fromCharCode(...bytes.subarray(index,index+32768));await api.uploadTenantDocument(tenant.id,{fileName:file.name,mimeType:file.type,contentBase64:btoa(binary)});setUploaded(true);setFile(null)}catch(err){setError(err instanceof Error?err.message:'Could not upload document')}finally{setBusy(false)}}
-  async function resend(){setBusy(true);setError('');try{await api.resendTenantWelcome(tenant.id);setResent(true)}catch(err){setError(err instanceof Error?err.message:'Could not resend welcome email')}finally{setBusy(false)}}
-  return <div className="modal-backdrop"><form className="modal tenant-portal-modal" onSubmit={active?uploadDocument:submit}><div className="modal-head"><div><span className="panel-kicker">TENANT PORTAL</span><h2>{active?'Portal and documents':`Portal access for ${tenant.first_name}`}</h2></div><button type="button" className="icon-button" onClick={onClose}><X size={17}/></button></div>{active?<><p className="tenant-portal-modal-copy">Welcome email: <strong>{resent?'queued':tenant.welcome_status||'not sent'}</strong>. Resending creates a fresh secure activation link.</p><label className="tenant-document-picker"><Upload size={22}/><span>{file?file.name:'Choose a document'}</span><small>PDF, Word, JPG or PNG · maximum 5 MB</small><input type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" onChange={event=>{setUploaded(false);setFile(event.target.files?.[0]||null)}}/></label>{uploaded&&<div className="tenant-document-success"><CheckCircle2 size={15}/> Document added to the tenant portal.</div>}{resent&&<div className="tenant-document-success"><CheckCircle2 size={15}/> Welcome email queued with a new activation link.</div>}{error&&<div className="auth-error">{error}</div>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={()=>void resend()} disabled={busy}>Resend welcome</button><button type="button" className="secondary-button" onClick={onClose}>Close</button><button disabled={busy||!file} className="primary-button">{busy?'Working…':'Upload document'}</button></div></>:saved?<div className="tenant-portal-created"><CheckCircle2 size={30}/><strong>Portal account is ready</strong><p>Give these sign-in details to the tenant securely. They will use the same company code as your team.</p><label><span>Email</span><code>{email}</code></label><label><span>Temporary password</span><code>{password}</code></label><button type="button" className="primary-button" onClick={onClose}>Done</button></div>:<><p className="tenant-portal-modal-copy">The tenant will only see their own dashboard, payments, documents and tickets.</p><div className="form-grid"><label className="full"><span>Tenant email</span><input type="email" required value={email} onChange={e=>setEmail(e.target.value)} placeholder="tenant@example.com"/></label><label className="full"><span>Temporary password</span><input required minLength={12} value={password} onChange={e=>setPassword(e.target.value)}/><small>Share this privately. The password must have at least 12 characters.</small></label></div>{error&&<div className="auth-error">{error}</div>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancel</button><button disabled={busy} className="primary-button">{busy?'Creating…':'Create portal access'}</button></div></>}</form></div>;
+function TenantPortalAccessModal({
+  tenant,
+  active,
+  onClose,
+  onCreated,
+}: {
+  tenant: RecordRow;
+  active: boolean;
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const randomPassword = useMemo(
+    () =>
+      `Home-${crypto.getRandomValues(new Uint32Array(1))[0].toString(36)}!9A`,
+    [],
+  );
+  const [email, setEmail] = useState(String(tenant.email || "")),
+    [password, setPassword] = useState(randomPassword),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState(""),
+    [saved, setSaved] = useState(false);
+  const [file, setFile] = useState<File | null>(null),
+    [uploaded, setUploaded] = useState(false),
+    [resent, setResent] = useState(false);
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      await api.createTenantPortal({
+        tenantId: tenant.id,
+        email,
+        temporaryPassword: password,
+      });
+      setSaved(true);
+      onCreated();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Could not create portal access",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function uploadDocument(event: FormEvent) {
+    event.preventDefault();
+    if (!file) return;
+    setBusy(true);
+    setError("");
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      let binary = "";
+      for (let index = 0; index < bytes.length; index += 32768)
+        binary += String.fromCharCode(...bytes.subarray(index, index + 32768));
+      await api.uploadTenantDocument(tenant.id, {
+        fileName: file.name,
+        mimeType: file.type,
+        contentBase64: btoa(binary),
+      });
+      setUploaded(true);
+      setFile(null);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Could not upload document",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function resend() {
+    setBusy(true);
+    setError("");
+    try {
+      await api.resendTenantWelcome(tenant.id);
+      setResent(true);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Could not resend welcome email",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="modal-backdrop">
+      <form
+        className="modal tenant-portal-modal"
+        onSubmit={active ? uploadDocument : submit}
+      >
+        <div className="modal-head">
+          <div>
+            <span className="panel-kicker">TENANT PORTAL</span>
+            <h2>
+              {active
+                ? "Portal and documents"
+                : `Portal access for ${tenant.first_name}`}
+            </h2>
+          </div>
+          <button type="button" className="icon-button" onClick={onClose}>
+            <X size={17} />
+          </button>
+        </div>
+        {active ? (
+          <>
+            <p className="tenant-portal-modal-copy">
+              Welcome email:{" "}
+              <strong>
+                {resent ? "queued" : tenant.welcome_status || "not sent"}
+              </strong>
+              . Resending creates a fresh secure activation link.
+            </p>
+            <label className="tenant-document-picker">
+              <Upload size={22} />
+              <span>{file ? file.name : "Choose a document"}</span>
+              <small>PDF, Word, JPG or PNG · maximum 5 MB</small>
+              <input
+                type="file"
+                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                onChange={(event) => {
+                  setUploaded(false);
+                  setFile(event.target.files?.[0] || null);
+                }}
+              />
+            </label>
+            {uploaded && (
+              <div className="tenant-document-success">
+                <CheckCircle2 size={15} /> Document added to the tenant portal.
+              </div>
+            )}
+            {resent && (
+              <div className="tenant-document-success">
+                <CheckCircle2 size={15} /> Welcome email queued with a new
+                activation link.
+              </div>
+            )}
+            {error && <div className="auth-error">{error}</div>}
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => void resend()}
+                disabled={busy}
+              >
+                Resend welcome
+              </button>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={onClose}
+              >
+                Close
+              </button>
+              <button disabled={busy || !file} className="primary-button">
+                {busy ? "Working…" : "Upload document"}
+              </button>
+            </div>
+          </>
+        ) : saved ? (
+          <div className="tenant-portal-created">
+            <CheckCircle2 size={30} />
+            <strong>Portal account is ready</strong>
+            <p>
+              Give these sign-in details to the tenant securely. They will use
+              the same company code as your team.
+            </p>
+            <label>
+              <span>Email</span>
+              <code>{email}</code>
+            </label>
+            <label>
+              <span>Temporary password</span>
+              <code>{password}</code>
+            </label>
+            <button type="button" className="primary-button" onClick={onClose}>
+              Done
+            </button>
+          </div>
+        ) : (
+          <>
+            <p className="tenant-portal-modal-copy">
+              The tenant will only see their own dashboard, payments, documents
+              and tickets.
+            </p>
+            <div className="form-grid">
+              <label className="full">
+                <span>Tenant email</span>
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="tenant@example.com"
+                />
+              </label>
+              <label className="full">
+                <span>Temporary password</span>
+                <input
+                  required
+                  minLength={12}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+                <small>
+                  Share this privately. The password must have at least 12
+                  characters.
+                </small>
+              </label>
+            </div>
+            {error && <div className="auth-error">{error}</div>}
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={onClose}
+              >
+                Cancel
+              </button>
+              <button disabled={busy} className="primary-button">
+                {busy ? "Creating…" : "Create portal access"}
+              </button>
+            </div>
+          </>
+        )}
+      </form>
+    </div>
+  );
 }
 
-export function SimplePaymentsPage({onAdd,refreshKey}:{onAdd:()=>void;refreshKey:number}){
-  const {rows,loading,error}=useRows(api.payments,refreshKey);const total=rows.reduce((n,p)=>n+Number(p.amount||0),0);
-  return <><ModuleHeader page="Collections" onAdd={onAdd}/><Notice loading={loading} error={error} empty={!rows.length}/><div className="metric-grid four"><MetricCard label="Payments" value={String(rows.length)} note="Recent records" icon={WalletCards}/><MetricCard label="Total received" value={money(total)} note="Shown payments" icon={CircleDollarSign} tone="success"/><MetricCard label="M-Pesa" value={String(rows.filter(p=>p.payment_method==='mpesa').length)} note="M-Pesa payments" icon={WalletCards} tone="info"/><MetricCard label="Unmatched" value={String(rows.filter(p=>!p.tenant_id).length)} note="Needs a tenant" icon={AlertTriangle} tone="danger"/></div><Panel title="Recent payments" kicker="Rent and payments"><DataTable headers={['Reference','Tenant','Amount','Method','Date','Status']} rows={rows.map(p=>[p.reference,p.tenant_name||'Unmatched',money(p.amount),String(p.payment_method||'—').toUpperCase(),p.paid_at?new Date(p.paid_at).toLocaleDateString():'—',<Status value={p.status||'posted'}/>])}/></Panel></>;
+export function SimplePaymentsPage({
+  onAdd,
+  refreshKey,
+}: {
+  onAdd: () => void;
+  refreshKey: number;
+}) {
+  const { rows, loading, error } = useRows(api.payments, refreshKey);
+  const total = rows.reduce((n, p) => n + Number(p.amount || 0), 0);
+  return (
+    <>
+      <ModuleHeader page="Collections" onAdd={onAdd} />
+      <Notice loading={loading} error={error} empty={!rows.length} />
+      <div className="metric-grid four">
+        <MetricCard
+          label="Payments"
+          value={String(rows.length)}
+          note="Recent records"
+          icon={WalletCards}
+        />
+        <MetricCard
+          label="Total received"
+          value={money(total)}
+          note="Shown payments"
+          icon={CircleDollarSign}
+          tone="success"
+        />
+        <MetricCard
+          label="M-Pesa"
+          value={String(
+            rows.filter((p) => p.payment_method === "mpesa").length,
+          )}
+          note="M-Pesa payments"
+          icon={WalletCards}
+          tone="info"
+        />
+        <MetricCard
+          label="Unmatched"
+          value={String(rows.filter((p) => !p.tenant_id).length)}
+          note="Needs a tenant"
+          icon={AlertTriangle}
+          tone="danger"
+        />
+      </div>
+      <Panel title="Recent payments" kicker="Rent and payments">
+        <DataTable
+          headers={[
+            "Reference",
+            "Tenant",
+            "Amount",
+            "Method",
+            "Date",
+            "Status",
+          ]}
+          rows={rows.map((p) => [
+            p.reference,
+            p.tenant_name || "Unmatched",
+            money(p.amount),
+            String(p.payment_method || "—").toUpperCase(),
+            p.paid_at ? new Date(p.paid_at).toLocaleDateString() : "—",
+            <Status value={p.status || "posted"} />,
+          ])}
+        />
+      </Panel>
+    </>
+  );
 }
 
-export function SimpleMaintenancePage({onAdd,refreshKey}:{onAdd:()=>void;refreshKey:number}){
-  const {rows,loading,error}=useRows(api.maintenance,refreshKey);const open=rows.filter(r=>!['closed','completed','cancelled'].includes(r.status)).length;
-  return <><ModuleHeader page="Maintenance" onAdd={onAdd}/><Notice loading={loading} error={error} empty={!rows.length}/><div className="metric-grid four"><MetricCard label="Open requests" value={String(open)} note="Needs action" icon={Wrench}/><MetricCard label="Urgent" value={String(rows.filter(r=>r.priority==='urgent').length)} note="Highest priority" icon={AlertTriangle} tone="danger"/><MetricCard label="In progress" value={String(rows.filter(r=>r.status==='in_progress').length)} note="Being repaired" icon={Wrench} tone="info"/><MetricCard label="Completed" value={String(rows.filter(r=>r.status==='completed'||r.status==='closed').length)} note="Finished jobs" icon={CheckCircle2} tone="success"/></div><Panel title="Repair requests" kicker="Maintenance"><DataTable headers={['Request','Problem','Property','Unit','Priority','Status']} rows={rows.map(r=>[r.request_number,r.title,r.property_name,r.unit_number||'—',r.priority,<Status value={r.status||'open'}/>])}/></Panel></>;
+export function SimpleMaintenancePage({
+  onAdd,
+  refreshKey,
+}: {
+  onAdd: () => void;
+  refreshKey: number;
+}) {
+  const { rows, loading, error } = useRows(api.maintenance, refreshKey);
+  const open = rows.filter(
+    (r) => !["closed", "completed", "cancelled"].includes(r.status),
+  ).length;
+  return (
+    <>
+      <ModuleHeader page="Maintenance" onAdd={onAdd} />
+      <Notice loading={loading} error={error} empty={!rows.length} />
+      <div className="metric-grid four">
+        <MetricCard
+          label="Open requests"
+          value={String(open)}
+          note="Needs action"
+          icon={Wrench}
+        />
+        <MetricCard
+          label="Urgent"
+          value={String(rows.filter((r) => r.priority === "urgent").length)}
+          note="Highest priority"
+          icon={AlertTriangle}
+          tone="danger"
+        />
+        <MetricCard
+          label="In progress"
+          value={String(rows.filter((r) => r.status === "in_progress").length)}
+          note="Being repaired"
+          icon={Wrench}
+          tone="info"
+        />
+        <MetricCard
+          label="Completed"
+          value={String(
+            rows.filter(
+              (r) => r.status === "completed" || r.status === "closed",
+            ).length,
+          )}
+          note="Finished jobs"
+          icon={CheckCircle2}
+          tone="success"
+        />
+      </div>
+      <Panel title="Repair requests" kicker="Maintenance">
+        <DataTable
+          headers={[
+            "Request",
+            "Problem",
+            "Property",
+            "Unit",
+            "Priority",
+            "Status",
+          ]}
+          rows={rows.map((r) => [
+            r.request_number,
+            r.title,
+            r.property_name,
+            r.unit_number || "—",
+            r.priority,
+            <Status value={r.status || "open"} />,
+          ])}
+        />
+      </Panel>
+    </>
+  );
 }
 
-function downloadCsv(name:string,rows:RecordRow[]){
-  if(!rows.length)throw new Error('There is no data to download');const headers=Object.keys(rows[0]).filter(k=>!['organization_id'].includes(k));const quote=(v:any)=>`"${String(v??'').replace(/"/g,'""')}"`;const csv=[headers.map(quote).join(','),...rows.map(row=>headers.map(h=>quote(row[h])).join(','))].join('\n');const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));const link=document.createElement('a');link.href=url;link.download=name;link.click();URL.revokeObjectURL(url);
+function downloadCsv(name: string, rows: RecordRow[]) {
+  if (!rows.length) throw new Error("There is no data to download");
+  const headers = Object.keys(rows[0]).filter(
+    (k) => !["organization_id"].includes(k),
+  );
+  const quote = (v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const csv = [
+    headers.map(quote).join(","),
+    ...rows.map((row) => headers.map((h) => quote(row[h])).join(",")),
+  ].join("\n");
+  const url = URL.createObjectURL(
+    new Blob([csv], { type: "text/csv;charset=utf-8" }),
+  );
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
-export function SimpleReportsPage(){
-  const [busy,setBusy]=useState(''),[message,setMessage]=useState(''),[month,setMonth]=useState(`${new Date().toISOString().slice(0,7)}-01`),[propertyId,setPropertyId]=useState(''),[properties,setProperties]=useState<RecordRow[]>([]),[reportInvoices,setReportInvoices]=useState<RecordRow[]>([]),[reportPayments,setReportPayments]=useState<RecordRow[]>([]),[reportArrears,setReportArrears]=useState<RecordRow[]>([]);
-  useEffect(()=>{Promise.all([api.properties(),api.invoices(),api.payments(),api.arrears()]).then(([p,i,pay,a])=>{setProperties(p);setReportInvoices(i);setReportPayments(pay);setReportArrears(a)}).catch(()=>{})},[]);
-  const reports:[string,string,()=>Promise<any[]>,string][]=[['Monthly rent roll','Tenants, units, rent and balances',api.rentRoll,'rent-roll.csv'],['Invoices and utilities','Rent, water and utility invoice history',api.invoices,'invoices.csv'],['Payments received','Payment history and references',api.payments,'payments.csv'],['Outstanding arrears','Overdue tenants and aging',api.arrears,'arrears.csv'],['Occupancy','Property and occupancy list',api.properties,'occupancy.csv'],['Water readings','Meter usage and charges for the selected month',()=>api.waterReadings(month,propertyId||undefined),'water-readings.csv'],['Other utility readings','Electricity and other metered usage',()=>api.utilityReadings(month,propertyId||undefined),'utility-readings.csv'],['Maintenance','Repair request and cost history',api.maintenance,'maintenance.csv']];
-  async function run(title:string,loader:()=>Promise<any[]>,file:string){setBusy(title);setMessage('');try{downloadCsv(file,await loader());setMessage(`${title} downloaded`)}catch(err){setMessage(err instanceof Error?err.message:'Could not download report')}finally{setBusy('')}}
-  const prefix=month.slice(0,7),selectedProperties=propertyId?properties.filter(p=>p.id===propertyId):properties,units=selectedProperties.reduce((sum,p)=>sum+Number(p.unit_count||0),0),occupied=selectedProperties.reduce((sum,p)=>sum+Number(p.occupied_count||0),0),invoiced=reportInvoices.filter(i=>String(i.period_start||'').startsWith(prefix)&&(!propertyId||i.property_id===propertyId)).reduce((sum,i)=>sum+Number(i.total||0),0),collected=reportPayments.filter(p=>String(p.paid_at||'').startsWith(prefix)).reduce((sum,p)=>sum+Number(p.amount||0),0),owing=reportArrears.filter(a=>!propertyId||a.property_id===propertyId).reduce((sum,a)=>sum+Number(a.balance||0),0);
-  return <><div className="module-header"><div><div className="eyebrow">Reports</div><h1>Clear property reports</h1><p>Choose a report to download, or print this summary and save it as PDF.</p></div><button className="secondary-button" onClick={()=>window.print()}><Printer size={15}/> Print / Save PDF</button></div><div className="billing-controls report-controls"><label><span>Month</span><input type="month" value={month.slice(0,7)} onChange={e=>setMonth(`${e.target.value}-01`)}/></label><label><span>Property</span><select value={propertyId} onChange={e=>setPropertyId(e.target.value)}><option value="">All properties</option>{properties.map(property=><option key={property.id} value={property.id}>{property.name}</option>)}</select></label></div><div className="metric-grid four report-summary"><MetricCard label="Occupancy" value={units?`${Math.round(occupied/units*100)}%`:'0%'} note={`${occupied} of ${units} units`} icon={Home}/><MetricCard label="Invoiced" value={money(invoiced)} note={prefix} icon={FileBarChart}/><MetricCard label="Collected" value={money(collected)} note={prefix} icon={WalletCards} tone="success"/><MetricCard label="Outstanding" value={money(owing)} note="Open balances" icon={AlertTriangle} tone="danger"/></div>{message&&<div className="overview-source-note"><Download size={14}/><span>{message}</span></div>}<div className="report-grid premium-report-grid">{reports.map(([title,desc,loader,file])=><button className="report-card" key={title} onClick={()=>void run(title,loader,file)} disabled={busy===title}><div className="report-icon"><FileBarChart size={18}/></div><div><strong>{busy===title?'Preparing…':title}</strong><span>{desc}</span><small>Download CSV</small></div><Download size={16}/></button>)}</div></>;
+export function SimpleReportsPage() {
+  const [busy, setBusy] = useState(""),
+    [message, setMessage] = useState(""),
+    [month, setMonth] = useState(`${new Date().toISOString().slice(0, 7)}-01`),
+    [propertyId, setPropertyId] = useState(""),
+    [properties, setProperties] = useState<RecordRow[]>([]),
+    [reportInvoices, setReportInvoices] = useState<RecordRow[]>([]),
+    [reportPayments, setReportPayments] = useState<RecordRow[]>([]),
+    [reportArrears, setReportArrears] = useState<RecordRow[]>([]);
+  useEffect(() => {
+    Promise.all([
+      api.properties(),
+      api.invoices(),
+      api.payments(),
+      api.arrears(),
+    ])
+      .then(([p, i, pay, a]) => {
+        setProperties(p);
+        setReportInvoices(i);
+        setReportPayments(pay);
+        setReportArrears(a);
+      })
+      .catch(() => {});
+  }, []);
+  const reports: [string, string, () => Promise<any[]>, string][] = [
+    [
+      "Monthly rent roll",
+      "Tenants, units, rent and balances",
+      api.rentRoll,
+      "rent-roll.csv",
+    ],
+    [
+      "Invoices and utilities",
+      "Rent, water and utility invoice history",
+      api.invoices,
+      "invoices.csv",
+    ],
+    [
+      "Payments received",
+      "Payment history and references",
+      api.payments,
+      "payments.csv",
+    ],
+    [
+      "Outstanding arrears",
+      "Overdue tenants and aging",
+      api.arrears,
+      "arrears.csv",
+    ],
+    [
+      "Occupancy",
+      "Property and occupancy list",
+      api.properties,
+      "occupancy.csv",
+    ],
+    [
+      "Water readings",
+      "Meter usage and charges for the selected month",
+      () => api.waterReadings(month, propertyId || undefined),
+      "water-readings.csv",
+    ],
+    [
+      "Other utility readings",
+      "Electricity and other metered usage",
+      () => api.utilityReadings(month, propertyId || undefined),
+      "utility-readings.csv",
+    ],
+    [
+      "Maintenance",
+      "Repair request and cost history",
+      api.maintenance,
+      "maintenance.csv",
+    ],
+  ];
+  async function run(
+    title: string,
+    loader: () => Promise<any[]>,
+    file: string,
+  ) {
+    setBusy(title);
+    setMessage("");
+    try {
+      downloadCsv(file, await loader());
+      setMessage(`${title} downloaded`);
+    } catch (err) {
+      setMessage(
+        err instanceof Error ? err.message : "Could not download report",
+      );
+    } finally {
+      setBusy("");
+    }
+  }
+  const prefix = month.slice(0, 7),
+    selectedProperties = propertyId
+      ? properties.filter((p) => p.id === propertyId)
+      : properties,
+    units = selectedProperties.reduce(
+      (sum, p) => sum + Number(p.unit_count || 0),
+      0,
+    ),
+    occupied = selectedProperties.reduce(
+      (sum, p) => sum + Number(p.occupied_count || 0),
+      0,
+    ),
+    invoiced = reportInvoices
+      .filter(
+        (i) =>
+          String(i.period_start || "").startsWith(prefix) &&
+          (!propertyId || i.property_id === propertyId),
+      )
+      .reduce((sum, i) => sum + Number(i.total || 0), 0),
+    collected = reportPayments
+      .filter((p) => String(p.paid_at || "").startsWith(prefix))
+      .reduce((sum, p) => sum + Number(p.amount || 0), 0),
+    owing = reportArrears
+      .filter((a) => !propertyId || a.property_id === propertyId)
+      .reduce((sum, a) => sum + Number(a.balance || 0), 0);
+  return (
+    <>
+      <div className="module-header">
+        <div>
+          <div className="eyebrow">Reports</div>
+          <h1>Clear property reports</h1>
+          <p>
+            Choose a report to download, or print this summary and save it as
+            PDF.
+          </p>
+        </div>
+        <button className="secondary-button" onClick={() => window.print()}>
+          <Printer size={15} /> Print / Save PDF
+        </button>
+      </div>
+      <div className="billing-controls report-controls">
+        <label>
+          <span>Month</span>
+          <input
+            type="month"
+            value={month.slice(0, 7)}
+            onChange={(e) => setMonth(`${e.target.value}-01`)}
+          />
+        </label>
+        <label>
+          <span>Property</span>
+          <select
+            value={propertyId}
+            onChange={(e) => setPropertyId(e.target.value)}
+          >
+            <option value="">All properties</option>
+            {properties.map((property) => (
+              <option key={property.id} value={property.id}>
+                {property.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div className="metric-grid four report-summary">
+        <MetricCard
+          label="Occupancy"
+          value={units ? `${Math.round((occupied / units) * 100)}%` : "0%"}
+          note={`${occupied} of ${units} units`}
+          icon={Home}
+        />
+        <MetricCard
+          label="Invoiced"
+          value={money(invoiced)}
+          note={prefix}
+          icon={FileBarChart}
+        />
+        <MetricCard
+          label="Collected"
+          value={money(collected)}
+          note={prefix}
+          icon={WalletCards}
+          tone="success"
+        />
+        <MetricCard
+          label="Outstanding"
+          value={money(owing)}
+          note="Open balances"
+          icon={AlertTriangle}
+          tone="danger"
+        />
+      </div>
+      {message && (
+        <div className="overview-source-note">
+          <Download size={14} />
+          <span>{message}</span>
+        </div>
+      )}
+      <div className="report-grid premium-report-grid">
+        {reports.map(([title, desc, loader, file]) => (
+          <button
+            className="report-card"
+            key={title}
+            onClick={() => void run(title, loader, file)}
+            disabled={busy === title}
+          >
+            <div className="report-icon">
+              <FileBarChart size={18} />
+            </div>
+            <div>
+              <strong>{busy === title ? "Preparing…" : title}</strong>
+              <span>{desc}</span>
+              <small>Download CSV</small>
+            </div>
+            <Download size={16} />
+          </button>
+        ))}
+      </div>
+    </>
+  );
 }
 
-export function SimpleSettingsPage(){
-  const initial=()=>{try{return JSON.parse(localStorage.getItem('propos_simple_settings')||'{}')}catch{return {}}};
-  const saved=initial(),[company,setCompany]=useState(saved.company||'Alpha Properties Ltd'),[currency,setCurrency]=useState(saved.currency||'KES'),[timezone,setTimezone]=useState(saved.timezone||'Africa/Nairobi'),[rentReminders,setRentReminders]=useState(saved.rentReminders!==false),[message,setMessage]=useState('');
-  function save(e:FormEvent){e.preventDefault();localStorage.setItem('propos_simple_settings',JSON.stringify({company,currency,timezone,rentReminders}));setMessage('Settings saved on this device.')}
-  return <><div className="module-header"><div><div className="eyebrow">Account</div><h1>Settings</h1><p>Manage the details used in this browser.</p></div></div><form className="panel" onSubmit={save}><div className="form-grid"> <label><span>Company name</span><input value={company} onChange={e=>setCompany(e.target.value)} required/></label><label><span>Currency</span><select value={currency} onChange={e=>setCurrency(e.target.value)}><option>KES</option><option>USD</option><option>UGX</option><option>TZS</option></select></label><label><span>Timezone</span><select value={timezone} onChange={e=>setTimezone(e.target.value)}><option>Africa/Nairobi</option><option>Africa/Kampala</option><option>Africa/Dar_es_Salaam</option></select></label><label><span>Rent reminders</span><select value={rentReminders?'on':'off'} onChange={e=>setRentReminders(e.target.value==='on')}><option value="on">Enabled</option><option value="off">Disabled</option></select></label></div><div className="modal-actions"><button className="primary-button" type="submit">Save settings</button></div>{message&&<div className="overview-source-note"><CheckCircle2 size={14}/><span>{message}</span></div>}</form></>;
+export function SimpleSettingsPage() {
+  const initial = () => {
+    try {
+      return JSON.parse(localStorage.getItem("propos_simple_settings") || "{}");
+    } catch {
+      return {};
+    }
+  };
+  const saved = initial(),
+    [company, setCompany] = useState(saved.company || "Alpha Properties Ltd"),
+    [currency, setCurrency] = useState(saved.currency || "KES"),
+    [timezone, setTimezone] = useState(saved.timezone || "Africa/Nairobi"),
+    [rentReminders, setRentReminders] = useState(saved.rentReminders !== false),
+    [message, setMessage] = useState("");
+  function save(e: FormEvent) {
+    e.preventDefault();
+    localStorage.setItem(
+      "propos_simple_settings",
+      JSON.stringify({ company, currency, timezone, rentReminders }),
+    );
+    setMessage("Settings saved on this device.");
+  }
+  return (
+    <>
+      <div className="module-header">
+        <div>
+          <div className="eyebrow">Account</div>
+          <h1>Settings</h1>
+          <p>Manage the details used in this browser.</p>
+        </div>
+      </div>
+      <form className="panel" onSubmit={save}>
+        <div className="form-grid">
+          {" "}
+          <label>
+            <span>Company name</span>
+            <input
+              value={company}
+              onChange={(e) => setCompany(e.target.value)}
+              required
+            />
+          </label>
+          <label>
+            <span>Currency</span>
+            <select
+              value={currency}
+              onChange={(e) => setCurrency(e.target.value)}
+            >
+              <option>KES</option>
+              <option>USD</option>
+              <option>UGX</option>
+              <option>TZS</option>
+            </select>
+          </label>
+          <label>
+            <span>Timezone</span>
+            <select
+              value={timezone}
+              onChange={(e) => setTimezone(e.target.value)}
+            >
+              <option>Africa/Nairobi</option>
+              <option>Africa/Kampala</option>
+              <option>Africa/Dar_es_Salaam</option>
+            </select>
+          </label>
+          <label>
+            <span>Rent reminders</span>
+            <select
+              value={rentReminders ? "on" : "off"}
+              onChange={(e) => setRentReminders(e.target.value === "on")}
+            >
+              <option value="on">Enabled</option>
+              <option value="off">Disabled</option>
+            </select>
+          </label>
+        </div>
+        <div className="modal-actions">
+          <button className="primary-button" type="submit">
+            Save settings
+          </button>
+        </div>
+        {message && (
+          <div className="overview-source-note">
+            <CheckCircle2 size={14} />
+            <span>{message}</span>
+          </div>
+        )}
+      </form>
+    </>
+  );
 }

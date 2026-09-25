@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "smoke:auth": "tsx src/smoke-auth.ts",
     "smoke:sms": "tsx src/smoke-sms.ts",
-    "smoke:payments": "tsx src/smoke-payments.ts"
+    "smoke:payments": "tsx src/smoke-payments.ts",
+    "smoke:tenants": "tsx src/smoke-tenants.ts"
   },
   "dependencies": {
     "cors": "latest",
