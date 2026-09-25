@@ -204,6 +204,37 @@ export type CommunicationTemplate = {
   created_at: string;
   updated_at: string;
 };
+export type PaymentDestination = {
+  id: string;
+  institution_code: string;
+  bank_name: string;
+  account_name: string;
+  masked_account: string;
+  branch_name?: string | null;
+  mpesa_paybill: string;
+  verification_status: "pending" | "verified" | "rejected";
+  routing_status: "disabled" | "active";
+  is_active: boolean;
+  review_notes?: string | null;
+  updated_at: string;
+};
+export type PaymentInstitution = {
+  code: string;
+  name: string;
+  paybill: string;
+  hint: string;
+};
+export type TenantPaymentOptions = {
+  ready: boolean;
+  destination?: {
+    bank_name: string;
+    masked_account: string;
+    mpesa_paybill: string;
+  } | null;
+  monthlyRent: number;
+  balance: number;
+  phone: string;
+};
 
 export class ApiError extends Error {
   status: number;
@@ -621,6 +652,54 @@ export const api = {
       "/api/sms/test",
       { method: "POST", body: JSON.stringify({ phone }) },
     ),
+  paymentSettings: () =>
+    request<{
+      provider: string;
+      institutions: PaymentInstitution[];
+      profile: PaymentDestination | null;
+    }>("/api/payment-settings"),
+  savePaymentDestination: (payload: {
+    institutionCode: string;
+    accountName: string;
+    accountNumber: string;
+    branchName: string;
+  }) =>
+    request<PaymentDestination>("/api/payment-settings/destination", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  operatorPaymentDestinations: () =>
+    request<any[]>("/api/operator/payment-destinations"),
+  reviewPaymentDestination: (
+    id: string,
+    decision: "verified" | "rejected",
+    notes = "",
+  ) =>
+    request(`/api/operator/payment-destinations/${id}/review`, {
+      method: "PATCH",
+      body: JSON.stringify({ decision, notes }),
+    }),
+  tenantPaymentOptions: () =>
+    request<TenantPaymentOptions>("/api/portal/payment-options"),
+  initiateTenantPayment: (payload: {
+    mode: "overdue" | "months";
+    months?: number;
+    phone: string;
+  }) =>
+    request<{
+      requestId: string;
+      status: string;
+      customerMessage: string;
+      amount: number;
+      externalReference: string;
+    }>("/api/portal/payments/stk", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  tenantPaymentStatus: (id: string) =>
+    request<any>(`/api/portal/payments/requests/${id}`),
+  downloadTenantReceipt: (id: string, fileName: string) =>
+    download(`/api/portal/payments/${id}/receipt`, fileName),
   communicationRecipients: (
     audience: CommunicationAudience,
     targetId?: string,
