@@ -11,7 +11,21 @@ async function main(){
   if('api_key_ciphertext' in body||'apiKey' in body||'api_key' in body)throw new Error('SMS settings leaked a credential');
   const invalid=await fetch('http://127.0.0.1:4010/api/sms/settings',{method:'PUT',headers,body:JSON.stringify({provider:'unsupported',apiKey:'x',senderId:'TEST',partnerId:'',enabled:true})});
   if(invalid.status!==400)throw new Error(`Invalid SMS provider returned ${invalid.status}`);
-  console.log(`SMS smoke passed: safe settings response, protected route, provider validation (${body.provider}).`);
+  const [recipients,templates,history]=await Promise.all([
+    fetch('http://127.0.0.1:4010/api/communication/recipients?audience=all',{headers}),
+    fetch('http://127.0.0.1:4010/api/communication/templates',{headers}),
+    fetch('http://127.0.0.1:4010/api/communication/history',{headers}),
+  ]);
+  if(recipients.status!==200||templates.status!==200||history.status!==200)throw new Error(`Communication routes returned ${recipients.status}/${templates.status}/${history.status}`);
+  const recipientBody=await recipients.json() as any;
+  if(!Array.isArray(recipientBody.recipients)||typeof recipientBody.count!=='number')throw new Error('Communication recipient preview returned an invalid response');
+  const created=await fetch('http://127.0.0.1:4010/api/communication/templates',{method:'POST',headers,body:JSON.stringify({name:'Smoke test template',message:'Hello {{name}}, this is a temporary test template.',category:'general'})});
+  if(created.status!==201)throw new Error(`Communication template creation returned ${created.status}`);
+  const createdBody=await created.json() as any;
+  const removed=await fetch(`http://127.0.0.1:4010/api/communication/templates/${createdBody.id}`,{method:'DELETE',headers});
+  if(removed.status!==204)throw new Error(`Communication template deletion returned ${removed.status}`);
+  await query(`DELETE FROM communication_templates WHERE id=$1 AND organization_id=$2`,[createdBody.id,row.organization_id]);
+  console.log(`SMS smoke passed: safe settings, provider validation, recipient preview, delivery history, and template create/delete (${body.provider}; ${recipientBody.count} recipients).`);
 }
 
 main().catch(error=>{console.error(error);process.exitCode=1}).finally(()=>pool.end());

@@ -1,0 +1,382 @@
+.communication-heading {
+  align-items: flex-end;
+}
+.provider-pill {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 750;
+  background: var(--panel);
+}
+.provider-pill.ready {
+  color: #167748;
+  background: #e9f8ef;
+  border-color: #ccefd9;
+}
+.communication-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 13px;
+  border-radius: 10px;
+  margin-bottom: 14px;
+  font-size: 10px;
+}
+.communication-notice.success {
+  color: #167748;
+  background: #e9f8ef;
+  border: 1px solid #ccefd9;
+}
+.communication-notice.error {
+  color: #a93831;
+  background: #fff0ef;
+  border: 1px solid #f5d5d2;
+}
+.communication-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(270px, 0.75fr);
+  gap: 16px;
+  align-items: start;
+}
+.communication-side {
+  display: grid;
+  gap: 16px;
+}
+.communication-compose {
+  display: grid;
+  gap: 18px;
+}
+.communication-compose fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+.communication-compose legend,
+.communication-target > span,
+.communication-message > span,
+.communication-template-modal label > span {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+.audience-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.audience-grid button {
+  min-height: 82px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 8px;
+  align-content: center;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-soft);
+  color: var(--text);
+  padding: 10px;
+  cursor: pointer;
+}
+.audience-grid button > span {
+  grid-row: 1/3;
+  color: var(--muted);
+}
+.audience-grid button strong {
+  font-size: 10px;
+}
+.audience-grid button small {
+  font-size: 8px;
+  line-height: 1.35;
+  color: var(--muted);
+  margin-top: 3px;
+}
+.audience-grid button.active {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 10%, transparent);
+}
+.audience-grid button.active > span {
+  color: var(--primary);
+}
+.communication-target {
+  display: grid;
+}
+.communication-target select,
+.communication-template-modal select,
+.communication-template-modal input,
+.communication-template-modal textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel-soft);
+  color: var(--text);
+  padding: 10px;
+  font: inherit;
+  font-size: 10px;
+}
+.communication-target select {
+  height: 40px;
+  padding: 0 10px;
+}
+.recipient-preview {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-soft);
+  display: grid;
+  gap: 10px;
+}
+.recipient-preview > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.recipient-preview svg {
+  color: var(--primary);
+}
+.recipient-preview span {
+  display: grid;
+  gap: 2px;
+}
+.recipient-preview strong {
+  font-size: 10px;
+}
+.recipient-preview small {
+  font-size: 8px;
+  color: var(--muted);
+}
+.recipient-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.recipient-chips span,
+.recipient-chips em {
+  display: block;
+  font-size: 8px;
+  font-style: normal;
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+}
+.communication-message textarea {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-soft);
+  color: var(--text);
+  padding: 12px;
+  font: inherit;
+  font-size: 10px;
+  line-height: 1.55;
+}
+.communication-message > small {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 8px;
+}
+.communication-message > small em {
+  font-style: normal;
+}
+.communication-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.communication-actions button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.template-quick-list {
+  display: grid;
+  gap: 7px;
+}
+.template-quick-list article {
+  position: relative;
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-soft);
+}
+.template-quick-list article > button:first-child {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  padding: 10px;
+  cursor: pointer;
+}
+.template-quick-list svg {
+  flex: 0 0 auto;
+  color: var(--primary);
+}
+.template-quick-list span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+.template-quick-list strong {
+  font-size: 9px;
+}
+.template-quick-list small {
+  font-size: 8px;
+  color: var(--muted);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.template-delete {
+  align-self: center;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 8px;
+  cursor: pointer;
+}
+.template-delete:hover {
+  color: #d54c4c;
+}
+.communication-history {
+  display: grid;
+}
+.communication-history article {
+  display: flex;
+  gap: 9px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.communication-history article:last-child {
+  border-bottom: 0;
+}
+.communication-history article > div {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  flex: 0 0 auto;
+}
+.communication-history .sent {
+  background: #e9f8ef;
+  color: #167748;
+}
+.communication-history .failed {
+  background: #fff0ef;
+  color: #a93831;
+}
+.communication-history article > span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+.communication-history strong {
+  font-size: 9px;
+}
+.communication-history small {
+  font-size: 8px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.communication-history em {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 7px;
+  font-style: normal;
+  color: var(--muted);
+}
+.communication-empty {
+  padding: 14px;
+  text-align: center;
+  font-size: 9px;
+  color: var(--muted);
+}
+.communication-template-modal {
+  display: grid;
+  gap: 13px;
+}
+.communication-template-modal label {
+  display: grid;
+}
+.communication-loading {
+  min-height: 260px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.communication-loading svg,
+.spin {
+  animation: communication-spin 1s linear infinite;
+}
+@keyframes communication-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (max-width: 980px) {
+  .communication-layout {
+    grid-template-columns: 1fr;
+  }
+  .communication-side {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+@media (max-width: 720px) {
+  .communication-heading {
+    align-items: flex-start;
+  }
+  .provider-pill {
+    margin-top: 8px;
+  }
+  .audience-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .communication-side {
+    grid-template-columns: 1fr;
+  }
+  .communication-actions {
+    flex-direction: column-reverse;
+  }
+  .communication-actions button {
+    justify-content: center;
+  }
+  .communication-message > small span {
+    max-width: 75%;
+  }
+}
+@media (max-width: 430px) {
+  .audience-grid {
+    grid-template-columns: 1fr;
+  }
+  .communication-message > small span {
+    display: none;
+  }
+}
